@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phase 1 Demo</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin: 0; padding: 20px; background-color: #f4f4f9; }
+        h1 { color: #333; }
+        .container { display: flex; width: 100%; max-width: 1200px; gap: 20px; }
+        .panel { flex: 1; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .chat-history { height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; border-radius: 4px; background: #fafafa; }
+        .chat-input { display: flex; gap: 10px; }
+        .chat-input input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        .chat-input button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .chat-input button:hover { background: #0056b3; }
+        pre { background: #eee; padding: 15px; border-radius: 4px; overflow-x: auto; font-size: 14px; }
+        img { max-width: 100%; border: 1px solid #ddd; border-radius: 4px; }
+        .message { margin-bottom: 10px; padding: 8px; border-radius: 4px; }
+        .user-msg { background: #e3f2fd; text-align: right; margin-left: 20%; }
+        .sys-msg { background: #f1f8e9; margin-right: 20%; }
+    </style>
+</head>
+<body>
+
+    <h1>Apartment Requirement Extraction</h1>
+    
+    <div class="container">
+        <!-- Chat Panel -->
+        <div class="panel">
+            <h2>Chat Interface</h2>
+            <div class="chat-history" id="chat-history"></div>
+            <div class="chat-input">
+                <input type="text" id="user-input" placeholder="E.g., I want 2 bedrooms and a kitchen..." onkeypress="handleEnter(event)">
+                <button onclick="sendMessage()">Send</button>
+                <button onclick="resetState()" style="background: #dc3545;">Reset</button>
+            </div>
+            <p id="loading" style="display: none; color: #555;">Waiting for Ollama...</p>
+        </div>
+
+        <!-- State & Diagram Panel -->
+        <div class="panel">
+            <h2>Extracted State (JSON)</h2>
+            <p><strong>Complete:</strong> <span id="completion-status" style="color: red;">False</span></p>
+            <pre id="json-state">{}</pre>
+            
+            <h2>Bubble Diagram</h2>
+            <img id="bubble-diagram" src="/graph/default" alt="Bubble Diagram">
+        </div>
+    </div>
+
+    <script>
+        const sessionId = "default";
+        const chatHistory = document.getElementById("chat-history");
+        const jsonState = document.getElementById("json-state");
+        const completionStatus = document.getElementById("completion-status");
+        const bubbleDiagram = document.getElementById("bubble-diagram");
+        const loading = document.getElementById("loading");
+
+        function addMessage(text, isUser) {
+            const div = document.createElement("div");
+            div.className = "message " + (isUser ? "user-msg" : "sys-msg");
+            div.textContent = text;
+            chatHistory.appendChild(div);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        function handleEnter(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById("user-input");
+            const text = input.value.trim();
+            if (!text) return;
+            
+            input.value = "";
+            addMessage(text, true);
+            loading.style.display = "block";
+
+            // Use AbortController with 10-minute timeout to match backend's Ollama timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 600000);
+
+            try {
+                const response = await fetch("/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: text, session_id: sessionId }),
+                    signal: controller.signal
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Update JSON view
+                    jsonState.textContent = JSON.stringify(data.state, null, 2);
+                    
+                    // Update completion status
+                    completionStatus.textContent = data.is_complete ? "True" : "False";
+                    completionStatus.style.color = data.is_complete ? "green" : "red";
+                    
+                    // Add system message
+                    addMessage(data.message, false);
+                    if (data.is_complete) {
+                        addMessage("Minimum requirements met!", false);
+                    }
+                    
+                    // Refresh image
+                    bubbleDiagram.src = `/graph/${sessionId}?t=${new Date().getTime()}`;
+                } else {
+                    addMessage("Error calling API.", false);
+                }
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    addMessage("Request timed out. The model may be overloaded.", false);
+                } else {
+                    addMessage("Network error.", false);
+                }
+            } finally {
+                clearTimeout(timeoutId);
+                loading.style.display = "none";
+            }
+        }
+
+        async function resetState() {
+            try {
+                await fetch(`/reset/${sessionId}`, { method: "POST" });
+                chatHistory.innerHTML = "";
+                jsonState.textContent = "{}";
+                completionStatus.textContent = "False";
+                completionStatus.style.color = "red";
+                bubbleDiagram.src = `/graph/${sessionId}?t=${new Date().getTime()}`;
+                addMessage("State has been reset.", false);
+            } catch (err) {
+                console.error(err);
+            }
+        }
+    </script>
+</body>
+</html>
