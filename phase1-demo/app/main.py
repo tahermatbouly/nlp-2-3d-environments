@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import os
@@ -8,7 +8,6 @@ from .schema import ApartmentState
 from .state import get_state, update_state, reset_state
 from .ollama import extract_requirements
 from .validator import is_state_complete
-from .graph import generate_bubble_diagram
 
 app = FastAPI(title="Phase 1 Demo - Requirement Extraction")
 
@@ -37,12 +36,6 @@ async def chat_endpoint(req: ChatRequest):
         "is_complete": is_complete,
         "message": error_msg if error_msg else "State updated successfully."
     }
-
-@app.get("/graph/{session_id}")
-def get_graph(session_id: str = "default"):
-    state = get_state(session_id)
-    buf = generate_bubble_diagram(state)
-    return StreamingResponse(buf, media_type="image/png")
 
 @app.post("/reset/{session_id}")
 def reset_endpoint(session_id: str = "default"):
