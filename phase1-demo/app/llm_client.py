@@ -12,7 +12,7 @@ from .prompts import EXTRACTION_PROMPT_TEMPLATE
 # for the current catalog if this ever needs to change.
 # NOTE: qwen/qwen3-32b was deprecated by Groq on 2026-07-17; qwen3.6-27b is
 # their recommended direct replacement.
-MODEL_NAME = "openai/gpt-oss-120b"
+MODEL_NAME = "openai/gpt-oss-20b"
 
 _client: Optional[AsyncGroq] = None
 

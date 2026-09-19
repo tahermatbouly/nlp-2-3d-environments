@@ -12,4 +12,5 @@ def is_state_complete(state: ApartmentState) -> bool:
         reqs.bathrooms >= 1 and 
         reqs.kitchen >= 1 and 
         reqs.living_room >= 1
+        
     )

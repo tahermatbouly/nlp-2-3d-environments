@@ -10,7 +10,7 @@ from .state import get_state, update_state, reset_state
 from .llm_client import extract_requirements
 from .validator import is_state_complete
 from .graph import build_graph_report, graph_to_dict, render_graph
-
+from .layout import build_layout
 app = FastAPI(title="Phase 1 Demo - Requirement Extraction")
 
 # Mount frontend
@@ -56,6 +56,32 @@ def graph_endpoint(session_id: str = "default"):
     return {
         "graph": graph_to_dict(G),
         "warnings": warnings
+    }
+
+@app.get("/layout/{session_id}")
+def layout_endpoint(session_id: str = "default"):
+    """
+    Deterministically convert the current apartment state into
+    rectangular room placements.
+    """
+    current_state = get_state(session_id)
+    G, warnings = build_graph_report(current_state)
+
+    placements = build_layout(current_state, G)
+
+    return {
+        "rooms": [
+            {
+                "id": room.id,
+                "type": room.type,
+                "x": room.x,
+                "y": room.y,
+                "width": room.width,
+                "height": room.height,
+            }
+            for room in placements
+        ],
+        "warnings": warnings,
     }
 
 @app.get("/graph/{session_id}/render")

@@ -13,6 +13,7 @@ class Requirements(BaseModel):
     bathrooms: int = Field(default=0, description="Total required bathrooms")
     kitchen: int = Field(default=0, description="Total required kitchens")
     living_room: int = Field(default=0, description="Total required living rooms")
+    corridor: int = Field(default=0, description="Total required corridors")
 
 class ApartmentState(BaseModel):
     rooms: List[Room] = Field(default_factory=list, description="List of specifically identified rooms")
