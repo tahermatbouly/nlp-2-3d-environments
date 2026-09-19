@@ -3,11 +3,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import os
+import tempfile
 
 from .schema import ApartmentState
 from .state import get_state, update_state, reset_state
-from .ollama import extract_requirements
+from .llm_client import extract_requirements
 from .validator import is_state_complete
+from .graph import build_graph_report, graph_to_dict, render_graph
 
 app = FastAPI(title="Phase 1 Demo - Requirement Extraction")
 
@@ -41,3 +43,27 @@ async def chat_endpoint(req: ChatRequest):
 def reset_endpoint(session_id: str = "default"):
     reset_state(session_id)
     return {"message": "State reset."}
+
+@app.get("/graph/{session_id}")
+def graph_endpoint(session_id: str = "default"):
+    """
+    Deterministically convert the current apartment state into the bubble
+    constraint graph (PHASE_1.md section 6). This never calls the LLM --
+    it only depends on whatever state has already been extracted.
+    """
+    current_state = get_state(session_id)
+    G, warnings = build_graph_report(current_state)
+    return {
+        "graph": graph_to_dict(G),
+        "warnings": warnings
+    }
+
+@app.get("/graph/{session_id}/render")
+def graph_render_endpoint(session_id: str = "default"):
+    """Render the current session's bubble diagram as a PNG image."""
+    current_state = get_state(session_id)
+    G, _ = build_graph_report(current_state)
+
+    tmp_path = os.path.join(tempfile.gettempdir(), f"bubble_diagram_{session_id}.png")
+    render_graph(G, tmp_path, title=f"Bubble Diagram — {session_id}")
+    return FileResponse(tmp_path, media_type="image/png")
