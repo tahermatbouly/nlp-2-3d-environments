@@ -6,7 +6,7 @@ from .prompts import EXTRACTION_PROMPT_TEMPLATE
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 # The user can override this if needed
-MODEL_NAME = "gemma4:e4b"
+MODEL_NAME = "qwen3:1.7B"
 
 from typing import Tuple, Optional
 
