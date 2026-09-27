@@ -6,1367 +6,1676 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-```
-<title>Phase 1 Demo</title>
+    ```
+    <title>Phase 1 Demo</title>
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-    rel="stylesheet"
->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+    >
 
-<script src="/static/vis-network.min.js"></script>
+    <script src="/static/vis-network.min.js"></script>
 
-<style>
-    * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-    }
-
-    body {
-        font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        background-color: #f0f2f5;
-        padding: 24px;
-        color: #1a1a2e;
-    }
-
-    h1 {
-        text-align: center;
-        font-size: 1.8rem;
-        font-weight: 700;
-        margin-bottom: 24px;
-        color: #1a1a2e;
-    }
-
-    h2 {
-        font-size: 1.05rem;
-        font-weight: 600;
-        color: #333;
-        margin-bottom: 12px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid #e8e8ee;
-    }
-
-    .container {
-        display: flex;
-        max-width: 1300px;
-        margin: 0 auto;
-        gap: 20px;
-    }
-
-    /* --- Chat Panel --- */
-
-    .panel {
-        flex: 1;
-        background: #fff;
-        padding: 24px;
-        border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
-        display: flex;
-        flex-direction: column;
-    }
-
-    .chat-history {
-        flex: 1;
-        min-height: 280px;
-        max-height: 340px;
-        overflow-y: auto;
-        border: 1px solid #e8e8ee;
-        padding: 12px;
-        margin-bottom: 12px;
-        border-radius: 8px;
-        background: #fafbfc;
-    }
-
-    .chat-input {
-        display: flex;
-        gap: 8px;
-    }
-
-    .chat-input input {
-        flex: 1;
-        padding: 10px 14px;
-        border: 1px solid #d0d0d8;
-        border-radius: 8px;
-        font-family: inherit;
-        font-size: 0.9rem;
-        outline: none;
-        transition: border-color 0.2s;
-    }
-
-    .chat-input input:focus {
-        border-color: #4a7cff;
-        box-shadow: 0 0 0 3px rgba(74, 124, 255, 0.12);
-    }
-
-    .chat-input button {
-        padding: 10px 20px;
-        border: none;
-        border-radius: 8px;
-        font-family: inherit;
-        font-size: 0.9rem;
-        font-weight: 600;
-        cursor: pointer;
-        transition: background 0.2s, transform 0.1s;
-    }
-
-    .chat-input button:active {
-        transform: scale(0.97);
-    }
-
-    .btn-send {
-        background: #4a7cff;
-        color: white;
-    }
-
-    .btn-send:hover {
-        background: #3a65d4;
-    }
-
-    .btn-reset {
-        background: #ff5252;
-        color: white;
-    }
-
-    .btn-reset:hover {
-        background: #d43d3d;
-    }
-
-    .message {
-        margin-bottom: 8px;
-        padding: 10px 14px;
-        border-radius: 10px;
-        font-size: 0.9rem;
-        line-height: 1.4;
-        max-width: 85%;
-    }
-
-    .user-msg {
-        background: #e3f0ff;
-        color: #1a3a6b;
-        margin-left: auto;
-        text-align: right;
-        border-bottom-right-radius: 3px;
-    }
-
-    .sys-msg {
-        background: #eef7ee;
-        color: #2a5a2a;
-        margin-right: auto;
-        border-bottom-left-radius: 3px;
-    }
-
-    #loading {
-        display: none;
-        text-align: center;
-        color: #888;
-        font-size: 0.85rem;
-        padding: 8px 0;
-    }
-
-    #loading .spinner {
-        display: inline-block;
-        width: 14px;
-        height: 14px;
-        border: 2px solid #ccc;
-        border-top-color: #4a7cff;
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-        vertical-align: middle;
-        margin-right: 6px;
-    }
-
-    @keyframes spin {
-        to {
-            transform: rotate(360deg);
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
         }
-    }
 
-    /* --- State & Diagram Panel --- */
+        body {
+            font-family: 'Inter', system-ui, -apple-user, sans-serif;
+            background-color: #f0f2f5;
+            padding: 24px;
+            color: #1a1a2e;
+        }
 
-    .status-badge {
-        display: inline-block;
-        padding: 3px 10px;
-        border-radius: 12px;
-        font-size: 0.8rem;
-        font-weight: 600;
-    }
+        h1 {
+            text-align: center;
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            color: #1a1a2e;
+        }
 
-    .status-incomplete {
-        background: #fce4e4;
-        color: #c0392b;
-    }
+        h2 {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e8e8ee;
+        }
 
-    .status-complete {
-        background: #e8f8e8;
-        color: #27ae60;
-    }
-
-    pre {
-        background: #f5f5fa;
-        padding: 14px;
-        border-radius: 8px;
-        overflow-x: auto;
-        font-size: 0.82rem;
-        font-family: 'JetBrains Mono', 'Fira Code', monospace;
-        line-height: 1.5;
-        border: 1px solid #e8e8ee;
-        max-height: 220px;
-        overflow-y: auto;
-    }
-
-    /* --- Bubble Diagram --- */
-
-    #bubble-diagram {
-        height: 500px;
-        border: 1px solid #e8e8ee;
-        border-radius: 8px;
-        background: #fafbfc;
-        position: relative;
-    }
-
-    #bubble-diagram .empty-state {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        text-align: center;
-        color: #aaa;
-        font-size: 0.95rem;
-    }
-
-    #bubble-diagram .empty-state .icon {
-        font-size: 2.5rem;
-        margin-bottom: 8px;
-    }
-
-    .section-gap {
-        margin-top: 20px;
-    }
-
-    /* --- Legend --- */
-
-    .legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 10px;
-        padding: 10px;
-        background: #f5f5fa;
-        border-radius: 8px;
-        border: 1px solid #e8e8ee;
-    }
-
-    .legend-item {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 0.78rem;
-        color: #555;
-    }
-
-    .legend-swatch {
-        width: 14px;
-        height: 14px;
-        border-radius: 50%;
-        border: 2px solid;
-    }
-
-    /* --- Floor Plan --- */
-
-    #floor-plan {
-        height: 500px;
-        border: 1px solid #e8e8ee;
-        border-radius: 8px;
-        background: #fafbfc;
-        position: relative;
-        overflow: auto;
-    }
-
-    #floor-plan .empty-state {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        text-align: center;
-        color: #aaa;
-        font-size: 0.95rem;
-    }
-
-    #floor-plan .empty-state .icon {
-        font-size: 2.5rem;
-        margin-bottom: 8px;
-    }
-
-    .floor-room {
-        position: absolute;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        border: 3px solid;
-        border-radius: 4px;
-        font-size: 13px;
-        font-weight: 600;
-        padding: 6px;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
-        user-select: none;
-    }
-
-    .floor-room-label {
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-    }
-
-    .floor-room-type {
-        text-transform: capitalize;
-    }
-
-    .floor-room-size {
-        font-size: 11px;
-        font-weight: 400;
-        opacity: 0.75;
-    }
-
-    .floor-plan-info {
-        margin-top: 8px;
-        padding: 8px 10px;
-        border-radius: 6px;
-        background: #f5f5fa;
-        border: 1px solid #e8e8ee;
-        color: #777;
-        font-size: 0.75rem;
-    }
-
-    /* --- Responsive --- */
-
-    @media (max-width: 900px) {
         .container {
+            display: flex;
+            max-width: 1300px;
+            margin: 0 auto;
+            gap: 20px;
+        }
+
+        /* --- Chat Panel --- */
+
+        .panel {
+            flex: 1;
+            background: #fff;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+            display: flex;
             flex-direction: column;
         }
 
-        .panel {
-            width: 100%;
+        .chat-history {
+            flex: 1;
+            min-height: 280px;
+            max-height: 340px;
+            overflow-y: auto;
+            border: 1px solid #e8e8ee;
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            background: #fafbfc;
         }
-    }
-</style>
-```
 
+        .chat-input {
+            display: flex;
+            gap: 8px;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid #d0d0d8;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .chat-input input:focus {
+            border-color: #4a7cff;
+            box-shadow: 0 0 0 3px rgba(74, 124, 255, 0.12);
+        }
+
+        .chat-input button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+
+        .chat-input button:active {
+            transform: scale(0.97);
+        }
+
+        .btn-send {
+            background: #4a7cff;
+            color: white;
+        }
+
+        .btn-send:hover {
+            background: #3a65d4;
+        }
+
+        .btn-reset {
+            background: #ff5252;
+            color: white;
+        }
+
+        .btn-reset:hover {
+            background: #d43d3d;
+        }
+        .btn-mic {
+        background: #4a7cff;
+        color: white;
+        }
+        .btn-mic:hover { background: #3a65d4; }
+        .btn-mic.recording {
+            background: #ff5252;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        .message {
+            margin-bottom: 8px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            max-width: 85%;
+        }
+
+        .user-msg {
+            background: #e3f0ff;
+            color: #1a3a6b;
+            margin-left: auto;
+            text-align: right;
+            border-bottom-right-radius: 3px;
+        }
+
+        .sys-msg {
+            background: #eef7ee;
+            color: #2a5a2a;
+            margin-right: auto;
+            border-bottom-left-radius: 3px;
+        }
+
+        #loading {
+            display: none;
+            text-align: center;
+            color: #888;
+            font-size: 0.85rem;
+            padding: 8px 0;
+        }
+
+        #loading .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #ccc;
+            border-top-color: #4a7cff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* --- State & Diagram Panel --- */
+
+        .status-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .status-incomplete {
+            background: #fce4e4;
+            color: #c0392b;
+        }
+
+        .status-complete {
+            background: #e8f8e8;
+            color: #27ae60;
+        }
+
+        pre {
+            background: #f5f5fa;
+            padding: 14px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 0.82rem;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            line-height: 1.5;
+            border: 1px solid #e8e8ee;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+
+        /* --- Bubble Diagram --- */
+
+        #bubble-diagram {
+            height: 500px;
+            border: 1px solid #e8e8ee;
+            border-radius: 8px;
+            background: #fafbfc;
+            position: relative;
+        }
+
+        #bubble-diagram .empty-state {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #aaa;
+            font-size: 0.95rem;
+        }
+
+        #bubble-diagram .empty-state .icon {
+            font-size: 2.5rem;
+            margin-bottom: 8px;
+        }
+
+        .section-gap {
+            margin-top: 20px;
+        }
+
+        /* --- Legend --- */
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+            padding: 10px;
+            background: #f5f5fa;
+            border-radius: 8px;
+            border: 1px solid #e8e8ee;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.78rem;
+            color: #555;
+        }
+
+        .legend-swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid;
+        }
+
+        /* --- Floor Plan --- */
+
+        #floor-plan {
+            height: 500px;
+            border: 1px solid #e8e8ee;
+            border-radius: 8px;
+            background: #fafbfc;
+            position: relative;
+            overflow: auto;
+        }
+
+        #floor-plan .empty-state {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #aaa;
+            font-size: 0.95rem;
+        }
+
+        #floor-plan .empty-state .icon {
+            font-size: 2.5rem;
+            margin-bottom: 8px;
+        }
+
+        .floor-room {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            border: 3px solid;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 6px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+            user-select: none;
+        }
+
+        .floor-room-label {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .floor-room-type {
+            text-transform: capitalize;
+        }
+
+        .floor-room-size {
+            font-size: 11px;
+            font-weight: 400;
+            opacity: 0.75;
+        }
+
+        .floor-plan-info {
+            margin-top: 8px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: #f5f5fa;
+            border: 1px solid #e8e8ee;
+            color: #777;
+            font-size: 0.75rem;
+        }
+
+        /* --- Responsive --- */
+
+        @media (max-width: 900px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .panel {
+                width: 100%;
+            }
+        }
+    </style>
 </head>
 
 <body>
 
-```
-<h1>🏠 Apartment Requirement Extraction</h1>
+    ```
+    <h1>🏠 Apartment Requirement Extraction</h1>
 
-<div class="container">
+    <div class="container">
 
-    <!-- Chat Panel -->
+        <!-- Chat Panel -->
 
-    <div class="panel">
+        <div class="panel">
 
-        <h2>💬 Chat Interface</h2>
+            <h2>💬 Chat Interface</h2>
 
-        <div class="chat-history" id="chat-history"></div>
+            <div class="chat-history" id="chat-history"></div>
 
-        <div id="loading">
-            <span class="spinner"></span>
-            Waiting for model response...
+            <div id="loading">
+                <span class="spinner"></span>
+                Waiting for model response...
+            </div>
+
+            <div class="chat-input">
+
+                <input
+                    type="text"
+                    id="user-input"
+                    placeholder="E.g., I want 2 bedrooms and a kitchen..."
+                    onkeypress="handleEnter(event)"
+                >
+
+                <button class="btn-send" onclick="sendMessage()">
+                    Send
+                </button>
+                <button class="btn-mic" id="mic-btn" onclick="toggleRecording()">🎤</button>
+                <button class="btn-reset" onclick="resetState()">
+                    Reset
+                </button>
+
+            </div>
+
         </div>
 
-        <div class="chat-input">
+        <!-- State & Diagram Panel -->
 
-            <input
-                type="text"
-                id="user-input"
-                placeholder="E.g., I want 2 bedrooms and a kitchen..."
-                onkeypress="handleEnter(event)"
-            >
+        <div class="panel">
 
-            <button class="btn-send" onclick="sendMessage()">
-                Send
-            </button>
+            <h2>📋 Extracted State</h2>
 
-            <button class="btn-reset" onclick="resetState()">
-                Reset
-            </button>
+            <p style="margin-bottom: 10px;">
+                <strong>Status:</strong>
+
+                <span
+                    id="completion-status"
+                    class="status-badge status-incomplete"
+                >
+                    Incomplete
+                </span>
+            </p>
+
+            <pre id="json-state">{}</pre>
+
+
+            <!-- Bubble Diagram -->
+
+            <div class="section-gap">
+
+                <h2>🔗 Bubble Diagram</h2>
+
+                <div id="bubble-diagram">
+
+                    <div class="empty-state">
+
+                        <div class="icon">🏗️</div>
+
+                        <div>
+                            No rooms yet. Start chatting to build your apartment.
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div class="legend" id="legend"></div>
+
+            </div>
+
+
+            <!-- Floor Plan -->
+
+            <div class="section-gap">
+
+                <h2>🏠 Floor Plan Preview</h2>
+
+                <div id="floor-plan">
+
+                    <div class="empty-state">
+
+                        <div class="icon">🏠</div>
+
+                        <div>
+                            No floor plan yet.
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div class="floor-plan-info">
+                    Prototype layout — rooms are represented as rectangles
+                    based on extracted size and explicit connections.
+                </div>
+
+            </div>
 
         </div>
 
     </div>
 
 
-    <!-- State & Diagram Panel -->
+    <script>
 
-    <div class="panel">
+        const sessionId = "default";
 
-        <h2>📋 Extracted State</h2>
-
-        <p style="margin-bottom: 10px;">
-            <strong>Status:</strong>
-
-            <span
-                id="completion-status"
-                class="status-badge status-incomplete"
-            >
-                Incomplete
-            </span>
-        </p>
-
-        <pre id="json-state">{}</pre>
+        const chatHistory = document.getElementById("chat-history");
+        const jsonState = document.getElementById("json-state");
+        const completionStatus =
+            document.getElementById("completion-status");
+        const loading = document.getElementById("loading");
 
 
-        <!-- Bubble Diagram -->
+        // ============================================================
+        // ROOM COLORS
+        // ============================================================
 
-        <div class="section-gap">
+        const ROOM_COLORS = {
 
-            <h2>🔗 Bubble Diagram</h2>
+            bedroom: {
+                background: '#BBDEFB',
+                border: '#1976D2',
+                label: 'Bedroom'
+            },
 
-            <div id="bubble-diagram">
+            bathroom: {
+                background: '#B2DFDB',
+                border: '#00796B',
+                label: 'Bathroom'
+            },
 
-                <div class="empty-state">
+            kitchen: {
+                background: '#FFF9C4',
+                border: '#F9A825',
+                label: 'Kitchen'
+            },
 
-                    <div class="icon">🏗️</div>
+            living_room: {
+                background: '#FFCCBC',
+                border: '#E64A19',
+                label: 'Living Room'
+            },
 
-                    <div>
-                        No rooms yet. Start chatting to build your apartment.
-                    </div>
+            dining_room: {
+                background: '#E1BEE7',
+                border: '#7B1FA2',
+                label: 'Dining Room'
+            },
 
-                </div>
+            hallway: {
+                background: '#CFD8DC',
+                border: '#455A64',
+                label: 'Hallway'
+            },
 
-            </div>
+            balcony: {
+                background: '#C8E6C9',
+                border: '#388E3C',
+                label: 'Balcony'
+            },
 
-            <div class="legend" id="legend"></div>
+            laundry: {
+                background: '#F0F4C3',
+                border: '#9E9D24',
+                label: 'Laundry'
+            },
 
-        </div>
+            default: {
+                background: '#E0E0E0',
+                border: '#757575',
+                label: 'Other'
+            }
 
-
-        <!-- Floor Plan -->
-
-        <div class="section-gap">
-
-            <h2>🏠 Floor Plan Preview</h2>
-
-            <div id="floor-plan">
-
-                <div class="empty-state">
-
-                    <div class="icon">🏠</div>
-
-                    <div>
-                        No floor plan yet.
-                    </div>
-
-                </div>
-
-            </div>
-
-            <div class="floor-plan-info">
-                Prototype layout — rooms are represented as rectangles
-                based on extracted size and explicit connections.
-            </div>
-
-        </div>
-
-    </div>
-
-</div>
-
-
-<script>
-
-    const sessionId = "default";
-
-    const chatHistory = document.getElementById("chat-history");
-    const jsonState = document.getElementById("json-state");
-    const completionStatus =
-        document.getElementById("completion-status");
-    const loading = document.getElementById("loading");
+        };
 
 
-    // ============================================================
-    // ROOM COLORS
-    // ============================================================
+        let currentNetwork = null;
 
-    const ROOM_COLORS = {
 
-        bedroom: {
-            background: '#BBDEFB',
-            border: '#1976D2',
-            label: 'Bedroom'
-        },
+        // ============================================================
+        // CHAT HELPERS
+        // ============================================================
 
-        bathroom: {
-            background: '#B2DFDB',
-            border: '#00796B',
-            label: 'Bathroom'
-        },
+        function addMessage(text, isUser) {
 
-        kitchen: {
-            background: '#FFF9C4',
-            border: '#F9A825',
-            label: 'Kitchen'
-        },
+            const div = document.createElement("div");
 
-        living_room: {
-            background: '#FFCCBC',
-            border: '#E64A19',
-            label: 'Living Room'
-        },
+            div.className =
+                "message " + (isUser ? "user-msg" : "sys-msg");
 
-        dining_room: {
-            background: '#E1BEE7',
-            border: '#7B1FA2',
-            label: 'Dining Room'
-        },
+            div.textContent = text;
 
-        hallway: {
-            background: '#CFD8DC',
-            border: '#455A64',
-            label: 'Hallway'
-        },
+            chatHistory.appendChild(div);
 
-        balcony: {
-            background: '#C8E6C9',
-            border: '#388E3C',
-            label: 'Balcony'
-        },
-
-        laundry: {
-            background: '#F0F4C3',
-            border: '#9E9D24',
-            label: 'Laundry'
-        },
-
-        default: {
-            background: '#E0E0E0',
-            border: '#757575',
-            label: 'Other'
+            chatHistory.scrollTop =
+                chatHistory.scrollHeight;
         }
 
-    };
+        function handleEnter(e) {
 
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        }
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
+        let recognition = null; // For Web Speech API
+        let interimTranscript = ''; // To hold interim results
 
-    let currentNetwork = null;
+        async function toggleRecording() {
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+                    mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+                    mediaRecorder.onstop = sendVoiceMessage;
+                    mediaRecorder.start();
+                    isRecording = true;
+                    document.getElementById("mic-btn").textContent = "⏹";
 
-
-    // ============================================================
-    // CHAT HELPERS
-    // ============================================================
-
-    function addMessage(text, isUser) {
-
-        const div = document.createElement("div");
-
-        div.className =
-            "message " + (isUser ? "user-msg" : "sys-msg");
-
-        div.textContent = text;
-
-        chatHistory.appendChild(div);
-
-        chatHistory.scrollTop =
-            chatHistory.scrollHeight;
-    }
-
-
-    function handleEnter(e) {
-
-        if (e.key === 'Enter') {
-            sendMessage();
+                    // Start real-time transcription using Web Speech API
+                    startRealTimeTranscription();
+                } catch (err) {
+                    addMessage("Microphone access denied or unavailable.", false);
+                }
+            } else {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                isRecording = false;
+                document.getElementById("mic-btn").textContent = "🎤";
+                // Stop real-time transcription
+                stopRealTimeTranscription();
+            }
         }
 
-    }
+        function startRealTimeTranscription() {
+            // Check if browser supports Web Speech API
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                addMessage("Real-time transcription not supported in this browser.", false);
+                return;
+            }
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true; // We want interim results
+            recognition.lang = 'ar-EG'; // Egyptian Arabic, fallback to 'ar' if not supported
+            // Try to set language, if not supported, it will use default
+            try {
+                recognition.lang = 'ar-EG';
+            } catch (e) {
+                try {
+                    recognition.lang = 'ar';
+                } catch (e2) {
+                    // Keep default
+                }
+            }
+
+            recognition.onresult = (event) => {
+                let interim = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        interimTranscript += event.results[i][0].transcript;
+                    } else {
+                        interim += event.results[i][0].transcript;
+                    }
+                }
+                // Update the UI with the interim transcript
+                updateInterimMessage(interimTranscript + interim);
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+            };
+
+            recognition.onend = () => {
+                // If recognition ends unexpectedly, restart it if still recording
+                if (isRecording) {
+                    recognition.start();
+                }
+            };
+
+            recognition.start();
+        }
+
+        function stopRealTimeTranscription() {
+            if (recognition) {
+                recognition.stop();
+                recognition = null;
+            }
+            // Clear the interim message after stopping
+            clearInterimMessage();
+        }
+
+        function updateInterimMessage(text) {
+            // Remove any previous interim message
+            clearInterimMessage();
+            if (text.trim() !== '') {
+                const div = document.createElement("div");
+                div.className = "message sys-msg interim";
+                div.style.opacity = "0.8"; // Slightly dimmed to indicate interim
+                div.textContent = "🎤 " + text; // Prefix with mic to indicate listening
+                chatHistory.appendChild(div);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            }
+        }
+
+        function clearInterimMessage() {
+            // Remove the last message if it's an interim message
+            const lastMsg = chatHistory.lastChild;
+            if (lastMsg && lastMsg.classList.contains('interim')) {
+                chatHistory.removeChild(lastMsg);
+            }
+        }
+
+        async function sendVoiceMessage() {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            addMessage("🎤 (voice message)", true);
+            loading.style.display = "block";
+
+            const formData = new FormData();
+            formData.append("audio", audioBlob, "recording.webm");
+            formData.append("session_id", sessionId);
+
+            try {
+                const response = await fetch("/voice-chat", { method: "POST", body: formData });
+                if (response.ok) {
+                    const data = await response.json();
+                    jsonState.textContent = JSON.stringify(data.state, null, 2);
+                    completionStatus.textContent = data.is_complete ? "Complete ✓" : "Incomplete";
+                    completionStatus.className = "status-badge " + (data.is_complete ? "status-complete" : "status-incomplete");
+                    addMessage(`Heard: "${data.transcript}"`, false);
+                    addMessage(data.message, false);
+                    renderGraph(data.state);
+                } else {
+                    // Read the actual error body instead of discarding it
+                    let errorMsg = "Error calling voice API.";
+                    try {
+                        const errData = await response.json();
+                        errorMsg = errData.message || errorMsg;
+                    } catch (parseErr) {
+                        // response wasn't JSON — fall back to status text
+                        errorMsg = `Error calling voice API (status ${response.status}).`;
+                    }
+                    console.error("Voice API error:", errorMsg);
+                    addMessage(errorMsg, false);
+                }
+            } catch (err) {
+                console.error("Network error:", err);
+                addMessage("Network error during voice transcription.", false);
+            } finally {
+                loading.style.display = "none";
+            }
+        }
+
+        function getRoomColor(type) {
+
+            return ROOM_COLORS[type] ||
+                   ROOM_COLORS.default;
+
+        }
 
 
-    function getRoomColor(type) {
+        // ============================================================
+        // BUBBLE DIAGRAM LEGEND
+        // ============================================================
 
-        return ROOM_COLORS[type] ||
-               ROOM_COLORS.default;
+        function renderLegend(rooms) {
 
-    }
+            const legendEl =
+                document.getElementById('legend');
+
+            const typesUsed =
+                new Set(rooms.map(r => r.type));
+
+            let html = '';
+
+            typesUsed.forEach(type => {
+
+                const color =
+                    getRoomColor(type);
+
+                const displayName =
+                    color.label ||
+                    type.replace(/\_/g, ' ');
+
+                html += `
+                    <div class="legend-item">
+                        <span
+                            class="legend-swatch"
+                            style="
+                                background:${color.background};
+                                border-color:${color.border};
+                            "
+                        ></span>
+
+                        ${displayName}
+                    </div>
+                `;
+
+            });
 
 
-    // ============================================================
-    // BUBBLE DIAGRAM LEGEND
-    // ============================================================
-
-    function renderLegend(rooms) {
-
-        const legendEl =
-            document.getElementById('legend');
-
-        const typesUsed =
-            new Set(rooms.map(r => r.type));
-
-        let html = '';
-
-        typesUsed.forEach(type => {
-
-            const color =
-                getRoomColor(type);
-
-            const displayName =
-                color.label ||
-                type.replace(/\_/g, ' ');
+            // Door legend
 
             html += `
                 <div class="legend-item">
-                    <span
-                        class="legend-swatch"
-                        style="
-                            background:${color.background};
-                            border-color:${color.border};
-                        "
-                    ></span>
-
-                    ${displayName}
+                    🚪 Door (connection)
                 </div>
             `;
 
-        });
+
+            legendEl.innerHTML = html;
+
+        }
 
 
-        // Door legend
+        // ============================================================
+        // BUBBLE DIAGRAM
+        // ============================================================
 
-        html += `
-            <div class="legend-item">
-                🚪 Door (connection)
-            </div>
-        `;
+        function renderGraph(state) {
 
-
-        legendEl.innerHTML = html;
-
-    }
+            const container =
+                document.getElementById('bubble-diagram');
 
 
-    // ============================================================
-    // BUBBLE DIAGRAM
-    // ============================================================
+            if (
+                !state ||
+                !state.rooms ||
+                state.rooms.length === 0
+            ) {
 
-    function renderGraph(state) {
+                // Destroy previous network
 
-        const container =
-            document.getElementById('bubble-diagram');
+                if (currentNetwork) {
+
+                    currentNetwork.destroy();
+                    currentNetwork = null;
+
+                }
 
 
-        if (
-            !state ||
-            !state.rooms ||
-            state.rooms.length === 0
-        ) {
+                container.innerHTML = `
+                    <div class="empty-state">
+
+                        <div class="icon">🏗️</div>
+
+                        <div>
+                            No rooms yet.
+                            Start chatting to build your apartment.
+                        </div>
+
+                    </div>
+                `;
+
+
+                document.getElementById('legend').innerHTML = '';
+
+                return;
+
+            }
+
+
+            // Clear container
+
+            container.innerHTML = '';
+
+
+            // --------------------------------------------------------
+            // Find hub room
+            // --------------------------------------------------------
+
+            let hubId =
+                state.rooms[0].id;
+
+            let maxConns = 0;
+
+
+            state.rooms.forEach(room => {
+
+                if (
+                    room.connections &&
+                    room.connections.length > maxConns
+                ) {
+
+                    maxConns =
+                        room.connections.length;
+
+                    hubId =
+                        room.id;
+
+                }
+
+            });
+
+
+            // --------------------------------------------------------
+            // Build nodes
+            // --------------------------------------------------------
+
+            const nodes =
+                state.rooms.map(room => {
+
+                    const colors =
+                        getRoomColor(room.type);
+
+                    const sizeLabel =
+                        room.size
+                            ? `\n(${room.size})`
+                            : '';
+
+                    const displayType =
+                        room.type.replace(/\_/g, ' ');
+
+                    const isHub =
+                        room.id === hubId;
+
+
+                    return {
+
+                        id: room.id,
+
+                        label:
+                            displayType +
+                            sizeLabel,
+
+                        title:
+                            `${displayType}` +
+                            `${room.size ? ' — ' + room.size : ''}` +
+                            `\nConnections: ${(room.connections || []).length}`,
+
+                        color: {
+
+                            background:
+                                colors.background,
+
+                            border:
+                                colors.border,
+
+                            highlight: {
+                                background:
+                                    colors.background,
+                                border:
+                                    colors.border
+                            },
+
+                            hover: {
+                                background:
+                                    colors.background,
+                                border:
+                                    colors.border
+                            }
+
+                        },
+
+                        font: {
+
+                            size:
+                                isHub ? 16 : 14,
+
+                            face:
+                                'Inter, system-ui, sans-serif',
+
+                            color:
+                                '#222',
+
+                            bold:
+                                isHub
+                                    ? {
+                                        color: '#111',
+                                        size: 16
+                                    }
+                                    : undefined,
+
+                            multi:
+                                'md'
+
+                        },
+
+                        shape:
+                            'circle',
+
+                        size:
+                            isHub ? 50 : 38,
+
+                        borderWidth:
+                            isHub ? 3 : 2,
+
+                        shadow: {
+
+                            enabled:
+                                true,
+
+                            color:
+                                'rgba(0,0,0,0.1)',
+
+                            size:
+                                6,
+
+                            x:
+                                2,
+
+                            y:
+                                2
+
+                        },
+
+                        // Pin hub to center
+
+                        ...(isHub
+                            ? {
+                                x: 0,
+                                y: 0,
+                                fixed: {
+                                    x: true,
+                                    y: true
+                                }
+                            }
+                            : {})
+
+                    };
+
+                });
+
+
+            // --------------------------------------------------------
+            // Build edges
+            // --------------------------------------------------------
+
+            const edgeSet =
+                new Set();
+
+            const edges = [];
+
+
+            state.rooms.forEach(room => {
+
+                if (!room.connections) {
+                    return;
+                }
+
+
+                room.connections.forEach(connId => {
+
+                    const key =
+                        [room.id, connId]
+                            .sort()
+                            .join('--');
+
+
+                    if (!edgeSet.has(key)) {
+
+                        edgeSet.add(key);
+
+
+                        edges.push({
+
+                            from:
+                                room.id,
+
+                            to:
+                                connId,
+
+                            label:
+                                '🚪',
+
+                            font: {
+
+                                size:
+                                    16,
+
+                                strokeWidth:
+                                    0,
+
+                                vadjust:
+                                    0
+
+                            },
+
+                            color: {
+
+                                color:
+                                    '#aaa',
+
+                                highlight:
+                                    '#555',
+
+                                hover:
+                                    '#777'
+
+                            },
+
+                            width:
+                                2,
+
+                            smooth: {
+                                type:
+                                    'continuous'
+                            },
+
+                            hoverWidth:
+                                0.5
+
+                        });
+
+                    }
+
+                });
+
+            });
+
+
+            const data = {
+
+                nodes:
+                    new vis.DataSet(nodes),
+
+                edges:
+                    new vis.DataSet(edges)
+
+            };
+
+
+            const options = {
+
+                physics: {
+
+                    solver:
+                        'forceAtlas2Based',
+
+                    forceAtlas2Based: {
+
+                        gravitationalConstant:
+                            -100,
+
+                        centralGravity:
+                            0.02,
+
+                        springLength:
+                            180,
+
+                        springConstant:
+                            0.05,
+
+                        damping:
+                            0.4,
+
+                        avoidOverlap:
+                            0.6
+
+                    },
+
+                    stabilization: {
+
+                        iterations:
+                            250,
+
+                        fit:
+                            true
+
+                    }
+
+                },
+
+                interaction: {
+
+                    hover:
+                        true,
+
+                    tooltipDelay:
+                        150,
+
+                    zoomView:
+                        true,
+
+                    dragNodes:
+                        true,
+
+                    dragView:
+                        true
+
+                },
+
+                nodes: {
+
+                    shape:
+                        'circle'
+
+                },
+
+                edges: {
+
+                    smooth: {
+                        type:
+                            'continuous'
+                    }
+
+                }
+
+            };
+
 
             // Destroy previous network
 
             if (currentNetwork) {
 
                 currentNetwork.destroy();
-                currentNetwork = null;
 
             }
 
 
-            container.innerHTML = `
-                <div class="empty-state">
-
-                    <div class="icon">🏗️</div>
-
-                    <div>
-                        No rooms yet.
-                        Start chatting to build your apartment.
-                    </div>
-
-                </div>
-            `;
+            currentNetwork =
+                new vis.Network(
+                    container,
+                    data,
+                    options
+                );
 
 
-            document.getElementById('legend').innerHTML = '';
+            // After stabilization
 
-            return;
+            currentNetwork.once(
+                'stabilizationIterationsDone',
+                function() {
+
+                    currentNetwork.setOptions({
+                        physics: {
+                            enabled: false
+                        }
+                    });
+
+
+                    // Release hub
+
+                    const hubNode =
+                        nodes.find(
+                            n => n.id === hubId
+                        );
+
+
+                    if (hubNode) {
+
+                        data.nodes.update({
+                            id: hubId,
+                            fixed: false
+                        });
+
+                    }
+
+                }
+
+            );
+
+
+            // Render legend
+
+            renderLegend(state.rooms);
 
         }
 
 
-        // Clear container
+        // ============================================================
+        // FLOOR PLAN
+        // ============================================================
 
-        container.innerHTML = '';
+        function renderFloorPlan(rooms) {
 
-
-        // --------------------------------------------------------
-        // Find hub room
-        // --------------------------------------------------------
-
-        let hubId =
-            state.rooms[0].id;
-
-        let maxConns = 0;
+            const container =
+                document.getElementById("floor-plan");
 
 
-        state.rooms.forEach(room => {
+            // No rooms
 
             if (
-                room.connections &&
-                room.connections.length > maxConns
+                !rooms ||
+                rooms.length === 0
             ) {
 
-                maxConns =
-                    room.connections.length;
+                container.innerHTML = `
+                    <div class="empty-state">
 
-                hubId =
-                    room.id;
+                        <div class="icon">🏠</div>
+
+                        <div>
+                            No floor plan yet.
+                        </div>
+
+                    </div>
+                `;
+
+                return;
 
             }
 
-        });
+
+            // Clear existing floor plan
+
+            container.innerHTML = "";
 
 
-        // --------------------------------------------------------
-        // Build nodes
-        // --------------------------------------------------------
+            /*
+             * layout.py works in abstract coordinate units.
+             *
+             * SCALE converts those units into pixels.
+             *
+             * Example:
+             * 4 × 4 room
+             * becomes
+             * 280 × 280 pixels
+             */
 
-        const nodes =
-            state.rooms.map(room => {
+            const SCALE = 70;
+
+            const PADDING = 40;
+
+
+            // Find minimum coordinates so the layout
+            // always starts inside the visible container.
+
+            const minX =
+                Math.min(
+                    ...rooms.map(room => room.x)
+                );
+
+            const minY =
+                Math.min(
+                    ...rooms.map(room => room.y)
+                );
+
+
+            // Render every room
+
+            rooms.forEach(room => {
 
                 const colors =
                     getRoomColor(room.type);
 
-                const sizeLabel =
-                    room.size
-                        ? `\n(${room.size})`
-                        : '';
+
+                const element =
+                    document.createElement("div");
+
+                element.className =
+                    "floor-room";
+
 
                 const displayType =
-                    room.type.replace(/\_/g, ' ');
-
-                const isHub =
-                    room.id === hubId;
-
-
-                return {
-
-                    id: room.id,
-
-                    label:
-                        displayType +
-                        sizeLabel,
-
-                    title:
-                        `${displayType}` +
-                        `${room.size ? ' — ' + room.size : ''}` +
-                        `\nConnections: ${(room.connections || []).length}`,
-
-                    color: {
-
-                        background:
-                            colors.background,
-
-                        border:
-                            colors.border,
-
-                        highlight: {
-                            background:
-                                colors.background,
-                            border:
-                                colors.border
-                        },
-
-                        hover: {
-                            background:
-                                colors.background,
-                            border:
-                                colors.border
-                        }
-
-                    },
-
-                    font: {
-
-                        size:
-                            isHub ? 16 : 14,
-
-                        face:
-                            'Inter, system-ui, sans-serif',
-
-                        color:
-                            '#222',
-
-                        bold:
-                            isHub
-                                ? {
-                                    color: '#111',
-                                    size: 16
-                                }
-                                : undefined,
-
-                        multi:
-                            'md'
-
-                    },
-
-                    shape:
-                        'circle',
-
-                    size:
-                        isHub ? 50 : 38,
-
-                    borderWidth:
-                        isHub ? 3 : 2,
-
-                    shadow: {
-
-                        enabled:
-                            true,
-
-                        color:
-                            'rgba(0,0,0,0.1)',
-
-                        size:
-                            6,
-
-                        x:
-                            2,
-
-                        y:
-                            2
-
-                    },
-
-                    // Pin hub to center
-
-                    ...(isHub
-                        ? {
-                            x: 0,
-                            y: 0,
-                            fixed: {
-                                x: true,
-                                y: true
-                            }
-                        }
-                        : {})
-
-                };
-
-            });
-
-
-        // --------------------------------------------------------
-        // Build edges
-        // --------------------------------------------------------
-
-        const edgeSet =
-            new Set();
-
-        const edges = [];
-
-
-        state.rooms.forEach(room => {
-
-            if (!room.connections) {
-                return;
-            }
-
-
-            room.connections.forEach(connId => {
-
-                const key =
-                    [room.id, connId]
-                        .sort()
-                        .join('--');
-
-
-                if (!edgeSet.has(key)) {
-
-                    edgeSet.add(key);
-
-
-                    edges.push({
-
-                        from:
-                            room.id,
-
-                        to:
-                            connId,
-
-                        label:
-                            '🚪',
-
-                        font: {
-
-                            size:
-                                16,
-
-                            strokeWidth:
-                                0,
-
-                            vadjust:
-                                0
-
-                        },
-
-                        color: {
-
-                            color:
-                                '#aaa',
-
-                            highlight:
-                                '#555',
-
-                            hover:
-                                '#777'
-
-                        },
-
-                        width:
-                            2,
-
-                        smooth: {
-                            type:
-                                'continuous'
-                        },
-
-                        hoverWidth:
-                            0.5
-
-                    });
-
-                }
-
-            });
-
-        });
-
-
-        const data = {
-
-            nodes:
-                new vis.DataSet(nodes),
-
-            edges:
-                new vis.DataSet(edges)
-
-        };
-
-
-        const options = {
-
-            physics: {
-
-                solver:
-                    'forceAtlas2Based',
-
-                forceAtlas2Based: {
-
-                    gravitationalConstant:
-                        -100,
-
-                    centralGravity:
-                        0.02,
-
-                    springLength:
-                        180,
-
-                    springConstant:
-                        0.05,
-
-                    damping:
-                        0.4,
-
-                    avoidOverlap:
-                        0.6
-
-                },
-
-                stabilization: {
-
-                    iterations:
-                        250,
-
-                    fit:
-                        true
-
-                }
-
-            },
-
-            interaction: {
-
-                hover:
-                    true,
-
-                tooltipDelay:
-                    150,
-
-                zoomView:
-                    true,
-
-                dragNodes:
-                    true,
-
-                dragView:
-                    true
-
-            },
-
-            nodes: {
-
-                shape:
-                    'circle'
-
-            },
-
-            edges: {
-
-                smooth: {
-                    type:
-                        'continuous'
-                }
-
-            }
-
-        };
-
-
-        // Destroy previous network
-
-        if (currentNetwork) {
-
-            currentNetwork.destroy();
-
-        }
-
-
-        currentNetwork =
-            new vis.Network(
-                container,
-                data,
-                options
-            );
-
-
-        // After stabilization
-
-        currentNetwork.once(
-            'stabilizationIterationsDone',
-            function() {
-
-                currentNetwork.setOptions({
-                    physics: {
-                        enabled: false
-                    }
-                });
-
-
-                // Release hub
-
-                const hubNode =
-                    nodes.find(
-                        n => n.id === hubId
+                    room.type.replace(
+                        /_/g,
+                        " "
                     );
 
 
-                if (hubNode) {
+                element.innerHTML = `
+                    <div class="floor-room-label">
 
-                    data.nodes.update({
-                        id: hubId,
-                        fixed: false
-                    });
+                        <div class="floor-room-type">
+                            ${displayType}
+                        </div>
 
-                }
+                        <div class="floor-room-size">
+                            ${room.width} × ${room.height}
+                        </div>
 
-            }
-        );
-
-
-        // Render legend
-
-        renderLegend(state.rooms);
-
-    }
-
-
-    // ============================================================
-    // FLOOR PLAN
-    // ============================================================
-
-    function renderFloorPlan(rooms) {
-
-        const container =
-            document.getElementById("floor-plan");
-
-
-        // No rooms
-
-        if (
-            !rooms ||
-            rooms.length === 0
-        ) {
-
-            container.innerHTML = `
-                <div class="empty-state">
-
-                    <div class="icon">🏠</div>
-
-                    <div>
-                        No floor plan yet.
                     </div>
+                `;
 
-                </div>
-            `;
 
-            return;
+                // Position
+
+                element.style.left =
+                    `${
+                        (room.x - minX) *
+                        SCALE +
+                        PADDING
+                    }px`;
+
+
+                element.style.top =
+                    `${
+                        (room.y - minY) *
+                        SCALE +
+                        PADDING
+                    }px`;
+
+
+                // Dimensions
+
+                element.style.width =
+                    `${room.width * SCALE}px`;
+
+                element.style.height =
+                    `${room.height * SCALE}px`;
+
+
+                // Colors
+
+                element.style.background =
+                    colors.background;
+
+                element.style.borderColor =
+                    colors.border;
+
+
+                // Tooltip
+
+                element.title =
+                    `${displayType}\n` +
+                    `ID: ${room.id}\n` +
+                    `Size: ${room.width} × ${room.height}`;
+
+
+                container.appendChild(element);
+
+            });
 
         }
 
 
-        // Clear existing floor plan
+        // ============================================================
+        // SEND MESSAGE
+        // ============================================================
 
-        container.innerHTML = "";
+        async function sendMessage() {
 
+            const input =
+                document.getElementById("user-input");
 
-        /*
-         * layout.py works in abstract coordinate units.
-         *
-         * SCALE converts those units into pixels.
-         *
-         * Example:
-         * 4 × 4 room
-         * becomes
-         * 280 × 280 pixels
-         */
-
-        const SCALE = 70;
-
-        const PADDING = 40;
+            const text =
+                input.value.trim();
 
 
-        // Find minimum coordinates so the layout
-        // always starts inside the visible container.
+            if (!text) {
+                return;
+            }
 
-        const minX =
-            Math.min(
-                ...rooms.map(room => room.x)
-            );
 
-        const minY =
-            Math.min(
-                ...rooms.map(room => room.y)
+            input.value = "";
+
+
+            addMessage(
+                text,
+                true
             );
 
 
-        // Render every room
-
-        rooms.forEach(room => {
-
-            const colors =
-                getRoomColor(room.type);
+            loading.style.display =
+                "block";
 
 
-            const element =
-                document.createElement("div");
+            /*
+             * Abort after 10 minutes.
+             *
+             * This is intentionally long because
+             * the LLM request may take some time.
+             */
 
-            element.className =
-                "floor-room";
+            const controller =
+                new AbortController();
 
-
-            const displayType =
-                room.type.replace(
-                    /_/g,
-                    " "
+            const timeoutId =
+                setTimeout(
+                    () => controller.abort(),
+                    600000
                 );
 
 
-            element.innerHTML = `
-                <div class="floor-room-label">
+            try {
 
-                    <div class="floor-room-type">
-                        ${displayType}
-                    </div>
+                // ----------------------------------------------------
+                // Extract requirements
+                // ----------------------------------------------------
 
-                    <div class="floor-room-size">
-                        ${room.width} × ${room.height}
-                    </div>
+                const response =
+                    await fetch(
+                        "/chat",
+                        {
+                            method:
+                                "POST",
 
-                </div>
-            `;
+                            headers: {
+                                "Content-Type":
+                                    "application/json"
+                            },
 
+                            body:
+                                JSON.stringify({
+                                    message:
+                                        text,
 
-            // Position
+                                    session_id:
+                                        sessionId
+                                }),
 
-            element.style.left =
-                `${
-                    (room.x - minX) *
-                    SCALE +
-                    PADDING
-                }px`;
-
-
-            element.style.top =
-                `${
-                    (room.y - minY) *
-                    SCALE +
-                    PADDING
-                }px`;
-
-
-            // Dimensions
-
-            element.style.width =
-                `${room.width * SCALE}px`;
-
-            element.style.height =
-                `${room.height * SCALE}px`;
+                            signal:
+                                controller.signal
+                        }
+                    );
 
 
-            // Colors
+                if (!response.ok) {
 
-            element.style.background =
-                colors.background;
+                    addMessage(
+                        "Error calling API.",
+                        false
+                    );
 
-            element.style.borderColor =
-                colors.border;
+                    return;
 
-
-            // Tooltip
-
-            element.title =
-                `${displayType}\n` +
-                `ID: ${room.id}\n` +
-                `Size: ${room.width} × ${room.height}`;
+                }
 
 
-            container.appendChild(element);
-
-        });
-
-    }
+                const data =
+                    await response.json();
 
 
-    // ============================================================
-    // SEND MESSAGE
-    // ============================================================
+                // ----------------------------------------------------
+                // Update JSON state
+                // ----------------------------------------------------
 
-    async function sendMessage() {
+                jsonState.textContent =
+                    JSON.stringify(
+                        data.state,
+                        null,
+                        2
+                    );
 
-        const input =
-            document.getElementById("user-input");
 
-        const text =
-            input.value.trim();
+                // ----------------------------------------------------
+                // Update completion status
+                // ----------------------------------------------------
+
+                if (data.is_complete) {
+
+                    completionStatus.textContent =
+                        "Complete ✓";
+
+                    completionStatus.className =
+                        "status-badge status-complete";
+
+                } else {
+
+                    completionStatus.textContent =
+                        "Incomplete";
+
+                    completionStatus.className =
+                        "status-badge status-incomplete";
+
+                }
 
 
-        if (!text) {
-            return;
+                // ----------------------------------------------------
+                // System message
+                // ----------------------------------------------------
+
+                addMessage(
+                    data.message,
+                    false
+                );
+
+
+                if (data.is_complete) {
+
+                    addMessage(
+                        "✅ Minimum requirements met!",
+                        false
+                    );
+
+                }
+
+
+                // ----------------------------------------------------
+                // Render bubble graph
+                // ----------------------------------------------------
+
+                renderGraph(
+                    data.state
+                );
+
+
+                // ----------------------------------------------------
+                // Generate deterministic floor plan
+                // ----------------------------------------------------
+
+                try {
+
+                    const layoutResponse =
+                        await fetch(
+                            `/layout/${sessionId}`
+                        );
+
+
+                    if (layoutResponse.ok) {
+
+                        const layoutData =
+                            await layoutResponse.json();
+
+
+                        renderFloorPlan(
+                            layoutData.rooms
+                        );
+
+
+                    } else {
+
+                        console.error(
+                            "Failed to generate layout."
+                        );
+
+                    }
+
+
+                } catch (layoutError) {
+
+                    console.error(
+                        "Layout error:",
+                        layoutError
+                    );
+
+                }
+
+
+            } catch (err) {
+
+                if (
+                    err.name ===
+                    'AbortError'
+                ) {
+
+                    addMessage(
+                        "Request timed out. The model may be overloaded.",
+                        false
+                    );
+
+                } else {
+
+                    console.error(
+                        err
+                    );
+
+                    addMessage(
+                        "Network error.",
+                        false
+                    );
+
+                }
+
+            } finally {
+
+                clearTimeout(
+                    timeoutId
+                );
+
+                loading.style.display =
+                    "none";
+
+            }
+
         }
 
 
-        input.value = "";
+        // ============================================================
+        // RESET
+        // ============================================================
 
+        async function resetState() {
 
-        addMessage(
-            text,
-            true
-        );
+            try {
 
-
-        loading.style.display =
-            "block";
-
-
-        /*
-         * Abort after 10 minutes.
-         *
-         * This is intentionally long because
-         * the LLM request may take some time.
-         */
-
-        const controller =
-            new AbortController();
-
-        const timeoutId =
-            setTimeout(
-                () => controller.abort(),
-                600000
-            );
-
-
-        try {
-
-            // ----------------------------------------------------
-            // Extract requirements
-            // ----------------------------------------------------
-
-            const response =
                 await fetch(
-                    "/chat",
+                    `/reset/${sessionId}`,
                     {
                         method:
-                            "POST",
-
-                        headers: {
-                            "Content-Type":
-                                "application/json"
-                        },
-
-                        body:
-                            JSON.stringify({
-                                message:
-                                    text,
-
-                                session_id:
-                                    sessionId
-                            }),
-
-                        signal:
-                            controller.signal
+                            "POST"
                     }
                 );
 
 
-            if (!response.ok) {
+                // Clear chat
 
-                addMessage(
-                    "Error calling API.",
-                    false
-                );
-
-                return;
-
-            }
+                chatHistory.innerHTML =
+                    "";
 
 
-            const data =
-                await response.json();
+                // Clear JSON
+
+                jsonState.textContent =
+                    "{}";
 
 
-            // ----------------------------------------------------
-            // Update JSON state
-            // ----------------------------------------------------
-
-            jsonState.textContent =
-                JSON.stringify(
-                    data.state,
-                    null,
-                    2
-                );
-
-
-            // ----------------------------------------------------
-            // Update completion status
-            // ----------------------------------------------------
-
-            if (data.is_complete) {
-
-                completionStatus.textContent =
-                    "Complete ✓";
-
-                completionStatus.className =
-                    "status-badge status-complete";
-
-            } else {
+                // Reset completion status
 
                 completionStatus.textContent =
                     "Incomplete";
@@ -1374,186 +1683,37 @@
                 completionStatus.className =
                     "status-badge status-incomplete";
 
-            }
+
+                // Clear bubble graph
+
+                renderGraph({
+                    rooms: [],
+                    requirements: {}
+                });
 
 
-            // ----------------------------------------------------
-            // System message
-            // ----------------------------------------------------
+                // Clear floor plan
 
-            addMessage(
-                data.message,
-                false
-            );
+                renderFloorPlan([]);
 
-
-            if (data.is_complete) {
 
                 addMessage(
-                    "✅ Minimum requirements met!",
+                    "State has been reset.",
                     false
                 );
 
-            }
 
-
-            // ----------------------------------------------------
-            // Render bubble graph
-            // ----------------------------------------------------
-
-            renderGraph(
-                data.state
-            );
-
-
-            // ----------------------------------------------------
-            // Generate deterministic floor plan
-            // ----------------------------------------------------
-
-            try {
-
-                const layoutResponse =
-                    await fetch(
-                        `/layout/${sessionId}`
-                    );
-
-
-                if (layoutResponse.ok) {
-
-                    const layoutData =
-                        await layoutResponse.json();
-
-
-                    renderFloorPlan(
-                        layoutData.rooms
-                    );
-
-
-                } else {
-
-                    console.error(
-                        "Failed to generate layout."
-                    );
-
-                }
-
-            } catch (layoutError) {
-
-                console.error(
-                    "Layout error:",
-                    layoutError
-                );
-
-            }
-
-        } catch (err) {
-
-            if (
-                err.name ===
-                'AbortError'
-            ) {
-
-                addMessage(
-                    "Request timed out. The model may be overloaded.",
-                    false
-                );
-
-            } else {
+            } catch (err) {
 
                 console.error(
                     err
                 );
 
-                addMessage(
-                    "Network error.",
-                    false
-                );
-
             }
 
-        } finally {
-
-            clearTimeout(
-                timeoutId
-            );
-
-            loading.style.display =
-                "none";
-
         }
 
-    }
-
-
-    // ============================================================
-    // RESET
-    // ============================================================
-
-    async function resetState() {
-
-        try {
-
-            await fetch(
-                `/reset/${sessionId}`,
-                {
-                    method:
-                        "POST"
-                }
-            );
-
-
-            // Clear chat
-
-            chatHistory.innerHTML =
-                "";
-
-
-            // Clear JSON
-
-            jsonState.textContent =
-                "{}";
-
-
-            // Reset completion status
-
-            completionStatus.textContent =
-                "Incomplete";
-
-            completionStatus.className =
-                "status-badge status-incomplete";
-
-
-            // Clear bubble graph
-
-            renderGraph({
-                rooms: [],
-                requirements: {}
-            });
-
-
-            // Clear floor plan
-
-            renderFloorPlan([]);
-
-
-            addMessage(
-                "State has been reset.",
-                false
-            );
-
-
-        } catch (err) {
-
-            console.error(
-                err
-            );
-
-        }
-
-    }
-
-</script>
-```
+    </script>
 
 </body>
 
