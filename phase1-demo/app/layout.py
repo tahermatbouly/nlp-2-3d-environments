@@ -70,7 +70,7 @@ def build_layout(state: ApartmentState, graph: nx.Graph) -> list[RoomPlacement]:
     component_index = 0
 
     for component in nx.connected_components(graph):
-        component = list(component)
+        component = sorted(list(component))
 
         # Pick the first room in this component as its anchor.
         root_id = component[0]

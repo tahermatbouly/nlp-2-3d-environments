@@ -1,24 +1,29 @@
 <!DOCTYPE html>
-
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    ```
-    <title>Phase 1 Demo</title>
-
+    <title>Apartment Requirement Extraction</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-        rel="stylesheet"
-    >
-
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="/static/vis-network.min.js"></script>
-
     <style>
+        :root {
+            --bg-color: #000000;
+            --panel-bg: #121212;
+            --primary-color: #0a84ff;
+            --primary-hover: #0066cc;
+            --text-color: #ffffff;
+            --text-light: #8e8e93;
+            --border-color: #38383a;
+            --shadow-sm: 0 1px 3px 0 rgba(0,0,0,0.2), 0 1px 2px 0 rgba(0,0,0,0.15);
+            --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.2), 0 2px 4px -1px rgba(0,0,0,0.15);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -2px rgba(0,0,0,0.15);
+            --transition: all 0.2s ease;
+            --border-radius: 12px;
+        }
+
         * {
             box-sizing: border-box;
             margin: 0;
@@ -26,90 +31,266 @@
         }
 
         body {
-            font-family: 'Inter', system-ui, -apple-user, sans-serif;
-            background-color: #f0f2f5;
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
             padding: 24px;
-            color: #1a1a2e;
         }
 
         h1 {
             text-align: center;
-            font-size: 1.8rem;
+            font-size: 2.5rem;
             font-weight: 700;
-            margin-bottom: 24px;
-            color: #1a1a2e;
+            margin-bottom: 3rem;
+            letter-spacing: -0.5px;
+            background: linear-gradient(to right, var(--primary-color), #64d2ff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
         }
 
-        h2 {
-            font-size: 1.05rem;
+        .button-group {
+            display: flex;
+            gap: 24px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            flex: 1;
+            min-width: 200px;
+            padding: 18px 24px;
+            border: none;
+            border-radius: var(--border-radius);
+            font: inherit;
             font-weight: 600;
-            color: #333;
-            margin-bottom: 12px;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #e8e8ee;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: var(--transition);
+            backdrop-filter: blur(10px);
+            box-shadow: var(--shadow-sm);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, 0.2),
+                transparent
+            );
+            transition: 0.5s;
+        }
+
+        .btn:hover::before {
+            left: 100%;
+        }
+
+        .btn-text {
+            background-color: rgba(255, 255, 255, 0.05);
+            color: var(--text-color);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-text:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .btn-voice {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+        }
+
+        .btn-voice:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .btn-voice:active {
+            transform: translateY(0);
+        }
+
+        .chat-view {
+            display: none;
+            width: 100%;
+            max-width: 1200px;
+        }
+
+        .chat-view.active {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .container {
-            display: flex;
-            max-width: 1300px;
+            display: grid;
+            gap: 24px;
+            max-width: 1400px;
             margin: 0 auto;
-            gap: 20px;
+            width: 100%;
         }
 
-        /* --- Chat Panel --- */
+        @media (min-width: 768px) {
+            .container {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
 
         .panel {
-            flex: 1;
-            background: #fff;
+            background: var(--panel-bg);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-md);
             padding: 24px;
-            border-radius: 12px;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
-            display: flex;
-            flex-direction: column;
+            transition: var(--transition);
+            border: 1px solid var(--border-color);
         }
 
+        .panel:hover {
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-2px);
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .panel-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-color);
+            flex: 1;
+        }
+
+        .panel-header .status-badge {
+            font-size: 0.875rem;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+
+        .status-incomplete {
+            background-color: rgba(255, 69, 58, 0.2);
+            color: #ff453a;
+        }
+
+        .status-complete {
+            background-color: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+
+        /* Chat Panel */
         .chat-history {
             flex: 1;
-            min-height: 280px;
-            max-height: 340px;
+            min-height: 200px;
+            max-height: 300px;
             overflow-y: auto;
-            border: 1px solid #e8e8ee;
-            padding: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            background-color: rgba(0, 0, 0, 0.2);
+        }
+
+        .message {
             margin-bottom: 12px;
-            border-radius: 8px;
-            background: #fafbfc;
+            padding: 10px 16px;
+            border-radius: 18px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            max-width: 80%;
+            word-wrap: break-word;
+            animation: fadeInUp 0.3s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .user-msg {
+            background-color: rgba(10, 132, 255, 0.2);
+            color: #3b83f6;
+            margin-left: auto;
+            border-bottom-right-radius: 6px;
+        }
+
+        .sys-msg {
+            background-color: rgba(255, 255, 255, 0.05);
+            color: #c7c7cc;
+            margin-right: auto;
+            border-bottom-left-radius: 6px;
+        }
+
+        .sys-msg.interim {
+            font-style: italic;
+            opacity: 0.7;
         }
 
         .chat-input {
             display: flex;
-            gap: 8px;
+            gap: 12px;
+            margin-top: 16px;
         }
 
         .chat-input input {
             flex: 1;
-            padding: 10px 14px;
-            border: 1px solid #d0d0d8;
-            border-radius: 8px;
-            font-family: inherit;
-            font-size: 0.9rem;
-            outline: none;
-            transition: border-color 0.2s;
+            padding: 12px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            font: inherit;
+            font-size: 0.95rem;
+            background-color: rgba(0, 0, 0, 0.3);
+            color: var(--text-color);
+            transition: var(--transition);
         }
 
         .chat-input input:focus {
-            border-color: #4a7cff;
-            box-shadow: 0 0 0 3px rgba(74, 124, 255, 0.12);
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.3);
         }
 
         .chat-input button {
-            padding: 10px 20px;
+            padding: 0 20px;
+            height: 48px;
             border: none;
-            border-radius: 8px;
-            font-family: inherit;
-            font-size: 0.9rem;
+            border-radius: var(--border-radius);
+            font: inherit;
             font-weight: 600;
             cursor: pointer;
-            transition: background 0.2s, transform 0.1s;
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
         }
 
         .chat-input button:active {
@@ -117,73 +298,66 @@
         }
 
         .btn-send {
-            background: #4a7cff;
+            background-color: var(--primary-color);
             color: white;
         }
 
         .btn-send:hover {
-            background: #3a65d4;
+            background-color: var(--primary-hover);
         }
 
         .btn-reset {
-            background: #ff5252;
+            background-color: rgba(255, 69, 58, 0.8);
             color: white;
         }
 
         .btn-reset:hover {
-            background: #d43d3d;
+            background-color: rgba(255, 69, 58, 1);
         }
+
         .btn-mic {
-        background: #4a7cff;
-        color: white;
+            background-color: var(--primary-color);
+            color: white;
+            font-size: 1.2rem;
+            padding: 0 16px;
         }
-        .btn-mic:hover { background: #3a65d4; }
+
+        .btn-mic:hover {
+            background-color: var(--primary-hover);
+        }
+
         .btn-mic.recording {
-            background: #ff5252;
-            animation: pulse 1s infinite;
+            background-color: rgba(255, 69, 58, 0.8);
+            animation: pulse 1.5s infinite;
         }
+
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
-        }
-        .message {
-            margin-bottom: 8px;
-            padding: 10px 14px;
-            border-radius: 10px;
-            font-size: 0.9rem;
-            line-height: 1.4;
-            max-width: 85%;
-        }
-
-        .user-msg {
-            background: #e3f0ff;
-            color: #1a3a6b;
-            margin-left: auto;
-            text-align: right;
-            border-bottom-right-radius: 3px;
-        }
-
-        .sys-msg {
-            background: #eef7ee;
-            color: #2a5a2a;
-            margin-right: auto;
-            border-bottom-left-radius: 3px;
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 69, 58, 0.4);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(255, 69, 58, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(255, 69, 58, 0);
+            }
         }
 
         #loading {
             display: none;
             text-align: center;
-            color: #888;
-            font-size: 0.85rem;
-            padding: 8px 0;
+            color: var(--text-light);
+            font-size: 0.9rem;
+            margin-top: 12px;
+            padding: 8px;
         }
 
         #loading .spinner {
             display: inline-block;
-            width: 14px;
-            height: 14px;
-            border: 2px solid #ccc;
-            border-top-color: #4a7cff;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--primary-color);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
             vertical-align: middle;
@@ -196,402 +370,347 @@
             }
         }
 
-        /* --- State & Diagram Panel --- */
-
-        .status-badge {
-            display: inline-block;
-            padding: 3px 10px;
-            border-radius: 12px;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }
-
-        .status-incomplete {
-            background: #fce4e4;
-            color: #c0392b;
-        }
-
-        .status-complete {
-            background: #e8f8e8;
-            color: #27ae60;
-        }
-
-        pre {
-            background: #f5f5fa;
-            padding: 14px;
-            border-radius: 8px;
-            overflow-x: auto;
-            font-size: 0.82rem;
+        /* State & Diagram Panel */
+        #json-state {
+            background-color: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 16px;
             font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.875rem;
             line-height: 1.5;
-            border: 1px solid #e8e8ee;
-            max-height: 220px;
+            height: 200px;
             overflow-y: auto;
+            color: #c7c7cc;
+            margin-bottom: 16px;
         }
 
-        /* --- Bubble Diagram --- */
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
 
-        #bubble-diagram {
-            height: 500px;
-            border: 1px solid #e8e8ee;
-            border-radius: 8px;
-            background: #fafbfc;
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background-color: var(--primary-color);
+            border-radius: 2px;
+        }
+
+        #bubble-diagram, #floor-plan {
+            background-color: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            min-height: 200px;
             position: relative;
+            transition: var(--transition);
         }
 
-        #bubble-diagram .empty-state {
+        #bubble-diagram:hover, #floor-plan:hover {
+            box-shadow: var(--shadow-sm);
+        }
+
+        #bubble-diagram .empty-state, #floor-plan .empty-state {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
             text-align: center;
-            color: #aaa;
-            font-size: 0.95rem;
+            color: var(--text-light);
+            padding: 24px;
         }
 
-        #bubble-diagram .empty-state .icon {
-            font-size: 2.5rem;
-            margin-bottom: 8px;
+        #bubble-diagram .empty-state .icon, #floor-plan .empty-state .icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+            display: block;
         }
-
-        .section-gap {
-            margin-top: 20px;
-        }
-
-        /* --- Legend --- */
 
         .legend {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 10px;
-            padding: 10px;
-            background: #f5f5fa;
-            border-radius: 8px;
-            border: 1px solid #e8e8ee;
+            gap: 12px;
+            margin-top: 16px;
+            padding: 12px;
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: var(--border-radius);
+            border: 1px solid var(--border-color);
         }
 
         .legend-item {
             display: flex;
             align-items: center;
-            gap: 5px;
-            font-size: 0.78rem;
-            color: #555;
+            gap: 8px;
+            font-size: 0.875rem;
+            color: var(--text-light);
         }
 
         .legend-swatch {
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
             border: 2px solid;
         }
 
-        /* --- Floor Plan --- */
-
-        #floor-plan {
-            height: 500px;
-            border: 1px solid #e8e8ee;
-            border-radius: 8px;
-            background: #fafbfc;
-            position: relative;
-            overflow: auto;
-        }
-
-        #floor-plan .empty-state {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+        .floor-plan-info {
+            margin-top: 16px;
+            padding: 12px;
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: var(--border-radius);
+            border: 1px solid var(--border-color);
+            font-size: 0.875rem;
+            color: var(--text-light);
             text-align: center;
-            color: #aaa;
-            font-size: 0.95rem;
         }
 
-        #floor-plan .empty-state .icon {
-            font-size: 2.5rem;
-            margin-bottom: 8px;
-        }
-
+        /* Floor Plan Room */
         .floor-room {
             position: absolute;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
             text-align: center;
             border: 3px solid;
-            border-radius: 4px;
-            font-size: 13px;
+            border-radius: 8px;
+            font-size: 0.875rem;
             font-weight: 600;
-            padding: 6px;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+            padding: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2), 0 2px 4px -1px rgba(0,0,0,0.15);
+            transition: var(--transition);
             user-select: none;
+        }
+
+        .floor-room:hover {
+            transform: scale(1.05);
+            z-index: 10;
         }
 
         .floor-room-label {
             display: flex;
             flex-direction: column;
-            gap: 3px;
+            gap: 4px;
         }
 
         .floor-room-type {
             text-transform: capitalize;
+            font-weight: 600;
         }
 
         .floor-room-size {
-            font-size: 11px;
-            font-weight: 400;
-            opacity: 0.75;
-        }
-
-        .floor-plan-info {
-            margin-top: 8px;
-            padding: 8px 10px;
-            border-radius: 6px;
-            background: #f5f5fa;
-            border: 1px solid #e8e8ee;
-            color: #777;
             font-size: 0.75rem;
+            font-weight: 400;
+            opacity: 0.8;
         }
 
-        /* --- Responsive --- */
+        /* Animations for diagram updates */
+        .animate-update {
+            animation: pulseUpdate 0.6s ease-out;
+        }
 
-        @media (max-width: 900px) {
-            .container {
+        @keyframes pulseUpdate {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.02);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            body {
+                padding: 16px;
+            }
+            h1 {
+                font-size: 1.8rem;
+            }
+            .panel {
+                padding: 16px;
+            }
+            .button-group {
                 flex-direction: column;
             }
-
-            .panel {
-                width: 100%;
+            .btn {
+                min-width: 100%;
             }
         }
     </style>
 </head>
-
 <body>
-
-    ```
-    <h1>🏠 Apartment Requirement Extraction</h1>
-
-    <div class="container">
-
-        <!-- Chat Panel -->
-
-        <div class="panel">
-
-            <h2>💬 Chat Interface</h2>
-
-            <div class="chat-history" id="chat-history"></div>
-
-            <div id="loading">
-                <span class="spinner"></span>
-                Waiting for model response...
-            </div>
-
-            <div class="chat-input">
-
-                <input
-                    type="text"
-                    id="user-input"
-                    placeholder="E.g., I want 2 bedrooms and a kitchen..."
-                    onkeypress="handleEnter(event)"
-                >
-
-                <button class="btn-send" onclick="sendMessage()">
-                    Send
-                </button>
-                <button class="btn-mic" id="mic-btn" onclick="toggleRecording()">🎤</button>
-                <button class="btn-reset" onclick="resetState()">
-                    Reset
-                </button>
-
-            </div>
-
+    <div id="initial-view">
+        <h1>FloorPlan AI</h1>
+        <div class="button-group">
+            <button class="btn btn-text" onclick="showTextInput()">Enter Text</button>
+            <button class="btn btn-voice" onclick="showVoiceInput()">Speak to Model</button>
         </div>
-
-        <!-- State & Diagram Panel -->
-
-        <div class="panel">
-
-            <h2>📋 Extracted State</h2>
-
-            <p style="margin-bottom: 10px;">
-                <strong>Status:</strong>
-
-                <span
-                    id="completion-status"
-                    class="status-badge status-incomplete"
-                >
-                    Incomplete
-                </span>
-            </p>
-
-            <pre id="json-state">{}</pre>
-
-
-            <!-- Bubble Diagram -->
-
-            <div class="section-gap">
-
-                <h2>🔗 Bubble Diagram</h2>
-
-                <div id="bubble-diagram">
-
-                    <div class="empty-state">
-
-                        <div class="icon">🏗️</div>
-
-                        <div>
-                            No rooms yet. Start chatting to build your apartment.
-                        </div>
-
-                    </div>
-
-                </div>
-
-                <div class="legend" id="legend"></div>
-
-            </div>
-
-
-            <!-- Floor Plan -->
-
-            <div class="section-gap">
-
-                <h2>🏠 Floor Plan Preview</h2>
-
-                <div id="floor-plan">
-
-                    <div class="empty-state">
-
-                        <div class="icon">🏠</div>
-
-                        <div>
-                            No floor plan yet.
-                        </div>
-
-                    </div>
-
-                </div>
-
-                <div class="floor-plan-info">
-                    Prototype layout — rooms are represented as rectangles
-                    based on extracted size and explicit connections.
-                </div>
-
-            </div>
-
-        </div>
-
     </div>
 
+    <div id="chat-view" class="chat-view">
+        <h1 style="text-align: center; margin-bottom: 2rem;">FloorPlan AI</h1>
+        <div class="container">
+            <!-- Chat Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>💬 Chat Interface</h2>
+                    <span id="completion-status" class="status-badge status-incomplete">
+                        Incomplete
+                    </span>
+                </div>
+                <div class="chat-history" id="chat-history"></div>
+                <div id="loading">
+                    <span class="spinner"></span>
+                    Waiting for model response...
+                </div>
+                <div class="chat-input">
+                    <input type="text" id="user-input" placeholder="E.g., I want 2 bedrooms and a kitchen..." onkeypress="handleEnter(event)">
+                    <button class="btn-send" onclick="sendMessage()">Send</button>
+                    <button class="btn-mic" id="mic-btn" onclick="toggleRecording()">🎤</button>
+                    <button class="btn-reset" onclick="resetState()">Reset</button>
+                </div>
+            </div>
+
+            <!-- State & Diagram Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>📋 Extracted State</h2>
+                </div>
+                <pre id="json-state">{}</pre>
+
+                <div class="section-gap">
+                    <h2 class="section-title">🔗 Bubble Diagram</h2>
+                    <div id="bubble-diagram">
+                        <div class="empty-state">
+                            <div class="icon">🏗️</div>
+                            <div>No rooms yet. Start chatting to build your apartment.</div>
+                        </div>
+                    </div>
+                    <div class="legend" id="legend"></div>
+                </div>
+
+                <div class="section-gap">
+                    <h2 class="section-title">🏠 Floor Plan Preview</h2>
+                    <div id="floor-plan">
+                        <div class="empty-state">
+                            <div class="icon">🏠</div>
+                            <div>No floor plan yet.</div>
+                        </div>
+                    </div>
+                    <div class="floor-plan-info">
+                        Prototype layout — rooms are represented as rectangles based on extracted size and explicit connections.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
-
         const sessionId = "default";
+
+        // View management
+        function showTextInput() {
+            document.getElementById('initial-view').style.display = 'none';
+            document.getElementById('chat-view').classList.add('active');
+            document.getElementById('user-input').focus();
+        }
+
+        function showVoiceInput() {
+            document.getElementById('initial-view').style.display = 'none';
+            document.getElementById('chat-view').classList.add('active');
+            toggleRecording(); // Start voice input immediately
+        }
 
         const chatHistory = document.getElementById("chat-history");
         const jsonState = document.getElementById("json-state");
-        const completionStatus =
-            document.getElementById("completion-status");
+        const completionStatus = document.getElementById("completion-status");
         const loading = document.getElementById("loading");
-
 
         // ============================================================
         // ROOM COLORS
         // ============================================================
 
         const ROOM_COLORS = {
-
             bedroom: {
-                background: '#BBDEFB',
-                border: '#1976D2',
+                background: '#dbeafe',
+                border: '#2563eb',
                 label: 'Bedroom'
             },
-
             bathroom: {
-                background: '#B2DFDB',
-                border: '#00796B',
+                background: '#d1fae5',
+                border: '#059669',
                 label: 'Bathroom'
             },
-
             kitchen: {
-                background: '#FFF9C4',
-                border: '#F9A825',
+                background: '#fffbeb',
+                border: '#d97706',
                 label: 'Kitchen'
             },
-
             living_room: {
-                background: '#FFCCBC',
-                border: '#E64A19',
+                background: '#ffedd5',
+                border: '#c2410c',
                 label: 'Living Room'
             },
-
             dining_room: {
-                background: '#E1BEE7',
-                border: '#7B1FA2',
+                background: '#f5d0fc',
+                border: '#8b5cf6',
                 label: 'Dining Room'
             },
-
             hallway: {
-                background: '#CFD8DC',
-                border: '#455A64',
+                background: '#e2e8f0',
+                border: '#64748b',
                 label: 'Hallway'
             },
-
             balcony: {
-                background: '#C8E6C9',
-                border: '#388E3C',
+                background: '#dcfce7',
+                border: '#16a34a',
                 label: 'Balcony'
             },
-
             laundry: {
-                background: '#F0F4C3',
-                border: '#9E9D24',
+                background: '#fef9c3',
+                border: '#a16207',
                 label: 'Laundry'
             },
-
             default: {
-                background: '#E0E0E0',
-                border: '#757575',
+                background: '#f3f4f6',
+                border: '#9ca3af',
                 label: 'Other'
             }
-
         };
 
-
         let currentNetwork = null;
-
 
         // ============================================================
         // CHAT HELPERS
         // ============================================================
 
         function addMessage(text, isUser) {
-
             const div = document.createElement("div");
-
-            div.className =
-                "message " + (isUser ? "user-msg" : "sys-msg");
-
+            div.className = "message " + (isUser ? "user-msg" : "sys-msg");
             div.textContent = text;
-
             chatHistory.appendChild(div);
-
-            chatHistory.scrollTop =
-                chatHistory.scrollHeight;
+            chatHistory.scrollTop = chatHistory.scrollHeight;
         }
 
         function handleEnter(e) {
-
             if (e.key === 'Enter') {
                 sendMessage();
             }
         }
+
         let mediaRecorder = null;
         let audioChunks = [];
         let isRecording = false;
-        let recognition = null; // For Web Speech API
-        let interimTranscript = ''; // To hold interim results
+        let recognition = null;
+        let interimTranscript = '';
 
         async function toggleRecording() {
             if (!isRecording) {
@@ -621,7 +740,6 @@
         }
 
         function startRealTimeTranscription() {
-            // Check if browser supports Web Speech API
             if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
                 addMessage("Real-time transcription not supported in this browser.", false);
                 return;
@@ -630,9 +748,8 @@
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
             recognition.continuous = true;
-            recognition.interimResults = true; // We want interim results
-            recognition.lang = 'ar-EG'; // Egyptian Arabic, fallback to 'ar' if not supported
-            // Try to set language, if not supported, it will use default
+            recognition.interimResults = true;
+            recognition.lang = 'ar-EG';
             try {
                 recognition.lang = 'ar-EG';
             } catch (e) {
@@ -652,7 +769,6 @@
                         interim += event.results[i][0].transcript;
                     }
                 }
-                // Update the UI with the interim transcript
                 updateInterimMessage(interimTranscript + interim);
             };
 
@@ -661,7 +777,6 @@
             };
 
             recognition.onend = () => {
-                // If recognition ends unexpectedly, restart it if still recording
                 if (isRecording) {
                     recognition.start();
                 }
@@ -675,25 +790,22 @@
                 recognition.stop();
                 recognition = null;
             }
-            // Clear the interim message after stopping
             clearInterimMessage();
         }
 
         function updateInterimMessage(text) {
-            // Remove any previous interim message
             clearInterimMessage();
             if (text.trim() !== '') {
                 const div = document.createElement("div");
                 div.className = "message sys-msg interim";
-                div.style.opacity = "0.8"; // Slightly dimmed to indicate interim
-                div.textContent = "🎤 " + text; // Prefix with mic to indicate listening
+                div.style.opacity = "0.8";
+                div.textContent = "🎤 " + text;
                 chatHistory.appendChild(div);
                 chatHistory.scrollTop = chatHistory.scrollHeight;
             }
         }
 
         function clearInterimMessage() {
-            // Remove the last message if it's an interim message
             const lastMsg = chatHistory.lastChild;
             if (lastMsg && lastMsg.classList.contains('interim')) {
                 chatHistory.removeChild(lastMsg);
@@ -720,13 +832,11 @@
                     addMessage(data.message, false);
                     renderGraph(data.state);
                 } else {
-                    // Read the actual error body instead of discarding it
                     let errorMsg = "Error calling voice API.";
                     try {
                         const errData = await response.json();
                         errorMsg = errData.message || errorMsg;
                     } catch (parseErr) {
-                        // response wasn't JSON — fall back to status text
                         errorMsg = `Error calling voice API (status ${response.status}).`;
                     }
                     console.error("Voice API error:", errorMsg);
@@ -741,54 +851,28 @@
         }
 
         function getRoomColor(type) {
-
-            return ROOM_COLORS[type] ||
-                   ROOM_COLORS.default;
-
+            return ROOM_COLORS[type] || ROOM_COLORS.default;
         }
-
 
         // ============================================================
         // BUBBLE DIAGRAM LEGEND
         // ============================================================
 
         function renderLegend(rooms) {
-
-            const legendEl =
-                document.getElementById('legend');
-
-            const typesUsed =
-                new Set(rooms.map(r => r.type));
-
+            const legendEl = document.getElementById('legend');
+            const typesUsed = new Set(rooms.map(r => r.type));
             let html = '';
 
             typesUsed.forEach(type => {
-
-                const color =
-                    getRoomColor(type);
-
-                const displayName =
-                    color.label ||
-                    type.replace(/\_/g, ' ');
-
+                const color = getRoomColor(type);
+                const displayName = color.label || type.replace(/\_/g, ' ');
                 html += `
                     <div class="legend-item">
-                        <span
-                            class="legend-swatch"
-                            style="
-                                background:${color.background};
-                                border-color:${color.border};
-                            "
-                        ></span>
-
+                        <span class="legend-swatch" style="background:${color.background};border-color:${color.border};"></span>
                         ${displayName}
                     </div>
                 `;
-
             });
-
-
-            // Door legend
 
             html += `
                 <div class="legend-item">
@@ -796,925 +880,303 @@
                 </div>
             `;
 
-
             legendEl.innerHTML = html;
-
         }
-
 
         // ============================================================
         // BUBBLE DIAGRAM
         // ============================================================
 
         function renderGraph(state) {
+            const container = document.getElementById('bubble-diagram');
 
-            const container =
-                document.getElementById('bubble-diagram');
-
-
-            if (
-                !state ||
-                !state.rooms ||
-                state.rooms.length === 0
-            ) {
-
-                // Destroy previous network
-
+            if (!state || !state.rooms || state.rooms.length === 0) {
                 if (currentNetwork) {
-
                     currentNetwork.destroy();
                     currentNetwork = null;
-
                 }
-
-
                 container.innerHTML = `
                     <div class="empty-state">
-
                         <div class="icon">🏗️</div>
-
-                        <div>
-                            No rooms yet.
-                            Start chatting to build your apartment.
-                        </div>
-
+                        <div>No rooms yet. Start chatting to build your apartment.</div>
                     </div>
                 `;
-
-
                 document.getElementById('legend').innerHTML = '';
-
                 return;
-
             }
-
-
-            // Clear container
 
             container.innerHTML = '';
 
-
-            // --------------------------------------------------------
             // Find hub room
-            // --------------------------------------------------------
-
-            let hubId =
-                state.rooms[0].id;
-
+            let hubId = state.rooms[0].id;
             let maxConns = 0;
-
-
             state.rooms.forEach(room => {
-
-                if (
-                    room.connections &&
-                    room.connections.length > maxConns
-                ) {
-
-                    maxConns =
-                        room.connections.length;
-
-                    hubId =
-                        room.id;
-
+                if (room.connections && room.connections.length > maxConns) {
+                    maxConns = room.connections.length;
+                    hubId = room.id;
                 }
-
             });
 
-
-            // --------------------------------------------------------
             // Build nodes
-            // --------------------------------------------------------
+            const nodes = state.rooms.map(room => {
+                const colors = getRoomColor(room.type);
+                const sizeLabel = room.size ? `\n(${room.size})` : '';
+                const displayType = room.type.replace(/\_/g, ' ');
+                const isHub = room.id === hubId;
 
-            const nodes =
-                state.rooms.map(room => {
-
-                    const colors =
-                        getRoomColor(room.type);
-
-                    const sizeLabel =
-                        room.size
-                            ? `\n(${room.size})`
-                            : '';
-
-                    const displayType =
-                        room.type.replace(/\_/g, ' ');
-
-                    const isHub =
-                        room.id === hubId;
-
-
-                    return {
-
-                        id: room.id,
-
-                        label:
-                            displayType +
-                            sizeLabel,
-
-                        title:
-                            `${displayType}` +
-                            `${room.size ? ' — ' + room.size : ''}` +
-                            `\nConnections: ${(room.connections || []).length}`,
-
-                        color: {
-
-                            background:
-                                colors.background,
-
-                            border:
-                                colors.border,
-
-                            highlight: {
-                                background:
-                                    colors.background,
-                                border:
-                                    colors.border
-                            },
-
-                            hover: {
-                                background:
-                                    colors.background,
-                                border:
-                                    colors.border
-                            }
-
+                return {
+                    id: room.id,
+                    label: displayType + sizeLabel,
+                    title: `${displayType}${room.size ? ' — ' + room.size : ''}\nConnections: ${(room.connections || []).length}`,
+                    color: {
+                        background: colors.background,
+                        border: colors.border,
+                        highlight: {
+                            background: colors.background,
+                            border: colors.border
                         },
-
-                        font: {
-
-                            size:
-                                isHub ? 16 : 14,
-
-                            face:
-                                'Inter, system-ui, sans-serif',
-
-                            color:
-                                '#222',
-
-                            bold:
-                                isHub
-                                    ? {
-                                        color: '#111',
-                                        size: 16
-                                    }
-                                    : undefined,
-
-                            multi:
-                                'md'
-
-                        },
-
-                        shape:
-                            'circle',
-
-                        size:
-                            isHub ? 50 : 38,
-
-                        borderWidth:
-                            isHub ? 3 : 2,
-
-                        shadow: {
-
-                            enabled:
-                                true,
-
-                            color:
-                                'rgba(0,0,0,0.1)',
-
-                            size:
-                                6,
-
-                            x:
-                                2,
-
-                            y:
-                                2
-
-                        },
-
-                        // Pin hub to center
-
-                        ...(isHub
-                            ? {
-                                x: 0,
-                                y: 0,
-                                fixed: {
-                                    x: true,
-                                    y: true
-                                }
-                            }
-                            : {})
-
-                    };
-
-                });
-
-
-            // --------------------------------------------------------
-            // Build edges
-            // --------------------------------------------------------
-
-            const edgeSet =
-                new Set();
-
-            const edges = [];
-
-
-            state.rooms.forEach(room => {
-
-                if (!room.connections) {
-                    return;
-                }
-
-
-                room.connections.forEach(connId => {
-
-                    const key =
-                        [room.id, connId]
-                            .sort()
-                            .join('--');
-
-
-                    if (!edgeSet.has(key)) {
-
-                        edgeSet.add(key);
-
-
-                        edges.push({
-
-                            from:
-                                room.id,
-
-                            to:
-                                connId,
-
-                            label:
-                                '🚪',
-
-                            font: {
-
-                                size:
-                                    16,
-
-                                strokeWidth:
-                                    0,
-
-                                vadjust:
-                                    0
-
-                            },
-
-                            color: {
-
-                                color:
-                                    '#aaa',
-
-                                highlight:
-                                    '#555',
-
-                                hover:
-                                    '#777'
-
-                            },
-
-                            width:
-                                2,
-
-                            smooth: {
-                                type:
-                                    'continuous'
-                            },
-
-                            hoverWidth:
-                                0.5
-
-                        });
-
-                    }
-
-                });
-
+                        hover: {
+                            background: colors.background,
+                            border: colors.border
+                        }
+                    },
+                    font: {
+                        size: isHub ? 16 : 14,
+                        face: 'Inter, system-ui, sans-serif',
+                        color: '#222',
+                        bold: isHub ? { color: '#111', size: 16 } : undefined,
+                        multi: 'md'
+                    },
+                    shape: 'circle',
+                    size: isHub ? 50 : 38,
+                    borderWidth: isHub ? 3 : 2,
+                    shadow: {
+                        enabled: true,
+                        color: 'rgba(0,0,0,0.1)',
+                        size: 6,
+                        x: 2,
+                        y: 2
+                    },
+                    ...(isHub ? { x: 0, y: 0, fixed: { x: true, y: true } } : {})
+                };
             });
 
+            // Build edges
+            const edgeSet = new Set();
+            const edges = [];
+            state.rooms.forEach(room => {
+                if (!room.connections) return;
+                room.connections.forEach(connId => {
+                    const key = [room.id, connId].sort().join('--');
+                    if (!edgeSet.has(key)) {
+                        edgeSet.add(key);
+                        edges.push({
+                            from: room.id,
+                            to: connId,
+                            label: '🚪',
+                            font: {
+                                size: 16,
+                                strokeWidth: 0,
+                                vadjust: 0
+                            },
+                            color: {
+                                color: '#aaa',
+                                highlight: '#555',
+                                hover: '#777'
+                            },
+                            width: 2,
+                            smooth: { type: 'continuous' },
+                            hoverWidth: 0.5
+                        });
+                    }
+                });
+            });
 
             const data = {
-
-                nodes:
-                    new vis.DataSet(nodes),
-
-                edges:
-                    new vis.DataSet(edges)
-
+                nodes: new vis.DataSet(nodes),
+                edges: new vis.DataSet(edges)
             };
-
 
             const options = {
-
                 physics: {
-
-                    solver:
-                        'forceAtlas2Based',
-
+                    solver: 'forceAtlas2Based',
                     forceAtlas2Based: {
-
-                        gravitationalConstant:
-                            -100,
-
-                        centralGravity:
-                            0.02,
-
-                        springLength:
-                            180,
-
-                        springConstant:
-                            0.05,
-
-                        damping:
-                            0.4,
-
-                        avoidOverlap:
-                            0.6
-
+                        gravitationalConstant: -100,
+                        centralGravity: 0.02,
+                        springLength: 180,
+                        springConstant: 0.05,
+                        damping: 0.4,
+                        avoidOverlap: 0.6
                     },
-
                     stabilization: {
-
-                        iterations:
-                            250,
-
-                        fit:
-                            true
-
+                        iterations: 250,
+                        fit: true
                     }
-
                 },
-
                 interaction: {
-
-                    hover:
-                        true,
-
-                    tooltipDelay:
-                        150,
-
-                    zoomView:
-                        true,
-
-                    dragNodes:
-                        true,
-
-                    dragView:
-                        true
-
+                    hover: true,
+                    tooltipDelay: 150,
+                    zoomView: true,
+                    dragNodes: true,
+                    dragView: true
                 },
-
-                nodes: {
-
-                    shape:
-                        'circle'
-
-                },
-
-                edges: {
-
-                    smooth: {
-                        type:
-                            'continuous'
-                    }
-
-                }
-
+                nodes: { shape: 'circle' },
+                edges: { smooth: { type: 'continuous' } }
             };
 
-
-            // Destroy previous network
-
             if (currentNetwork) {
-
                 currentNetwork.destroy();
-
             }
 
+            currentNetwork = new vis.Network(container, data, options);
 
-            currentNetwork =
-                new vis.Network(
-                    container,
-                    data,
-                    options
-                );
+            currentNetwork.once('stabilizationIterationsDone', function() {
+                currentNetwork.setOptions({ physics: { enabled: false } });
 
-
-            // After stabilization
-
-            currentNetwork.once(
-                'stabilizationIterationsDone',
-                function() {
-
-                    currentNetwork.setOptions({
-                        physics: {
-                            enabled: false
-                        }
-                    });
-
-
-                    // Release hub
-
-                    const hubNode =
-                        nodes.find(
-                            n => n.id === hubId
-                        );
-
-
-                    if (hubNode) {
-
-                        data.nodes.update({
-                            id: hubId,
-                            fixed: false
-                        });
-
-                    }
-
+                const hubNode = nodes.find(n => n.id === hubId);
+                if (hubNode) {
+                    data.nodes.update({ id: hubId, fixed: false });
                 }
-
-            );
-
-
-            // Render legend
+            });
 
             renderLegend(state.rooms);
-
         }
-
 
         // ============================================================
         // FLOOR PLAN
         // ============================================================
 
         function renderFloorPlan(rooms) {
+            const container = document.getElementById("floor-plan");
 
-            const container =
-                document.getElementById("floor-plan");
-
-
-            // No rooms
-
-            if (
-                !rooms ||
-                rooms.length === 0
-            ) {
-
+            if (!rooms || rooms.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-
                         <div class="icon">🏠</div>
-
-                        <div>
-                            No floor plan yet.
-                        </div>
-
+                        <div>No floor plan yet.</div>
                     </div>
                 `;
-
                 return;
-
             }
-
-
-            // Clear existing floor plan
 
             container.innerHTML = "";
 
-
-            /*
-             * layout.py works in abstract coordinate units.
-             *
-             * SCALE converts those units into pixels.
-             *
-             * Example:
-             * 4 × 4 room
-             * becomes
-             * 280 × 280 pixels
-             */
-
             const SCALE = 70;
-
             const PADDING = 40;
 
-
-            // Find minimum coordinates so the layout
-            // always starts inside the visible container.
-
-            const minX =
-                Math.min(
-                    ...rooms.map(room => room.x)
-                );
-
-            const minY =
-                Math.min(
-                    ...rooms.map(room => room.y)
-                );
-
-
-            // Render every room
+            const minX = Math.min(...rooms.map(room => room.x));
+            const minY = Math.min(...rooms.map(room => room.y));
 
             rooms.forEach(room => {
+                const colors = getRoomColor(room.type);
+                const element = document.createElement("div");
+                element.className = "floor-room";
 
-                const colors =
-                    getRoomColor(room.type);
-
-
-                const element =
-                    document.createElement("div");
-
-                element.className =
-                    "floor-room";
-
-
-                const displayType =
-                    room.type.replace(
-                        /_/g,
-                        " "
-                    );
-
+                const displayType = room.type.replace(/_/g, " ");
 
                 element.innerHTML = `
                     <div class="floor-room-label">
-
-                        <div class="floor-room-type">
-                            ${displayType}
-                        </div>
-
-                        <div class="floor-room-size">
-                            ${room.width} × ${room.height}
-                        </div>
-
+                        <div class="floor-room-type">${displayType}</div>
+                        <div class="floor-room-size">${room.width} × ${room.height}</div>
                     </div>
                 `;
 
-
-                // Position
-
-                element.style.left =
-                    `${
-                        (room.x - minX) *
-                        SCALE +
-                        PADDING
-                    }px`;
-
-
-                element.style.top =
-                    `${
-                        (room.y - minY) *
-                        SCALE +
-                        PADDING
-                    }px`;
-
-
-                // Dimensions
-
-                element.style.width =
-                    `${room.width * SCALE}px`;
-
-                element.style.height =
-                    `${room.height * SCALE}px`;
-
-
-                // Colors
-
-                element.style.background =
-                    colors.background;
-
-                element.style.borderColor =
-                    colors.border;
-
-
-                // Tooltip
-
-                element.title =
-                    `${displayType}\n` +
-                    `ID: ${room.id}\n` +
-                    `Size: ${room.width} × ${room.height}`;
-
+                element.style.left = `${
+                    (room.x - minX) * SCALE + PADDING
+                }px`;
+                element.style.top = `${
+                    (room.y - minY) * SCALE + PADDING
+                }px`;
+                element.style.width = `${room.width * SCALE}px`;
+                element.style.height = `${room.height * SCALE}px`;
+                element.style.background = colors.background;
+                element.style.borderColor = colors.border;
+                element.title = `${displayType}\nID: ${room.id}\nSize: ${room.width} × ${room.height}`;
 
                 container.appendChild(element);
-
             });
-
         }
-
 
         // ============================================================
         // SEND MESSAGE
         // ============================================================
 
         async function sendMessage() {
-
-            const input =
-                document.getElementById("user-input");
-
-            const text =
-                input.value.trim();
-
-
-            if (!text) {
-                return;
-            }
-
-
+            const input = document.getElementById("user-input");
+            const text = input.value.trim();
+            if (!text) return;
             input.value = "";
-
-
-            addMessage(
-                text,
-                true
-            );
-
-
-            loading.style.display =
-                "block";
-
-
-            /*
-             * Abort after 10 minutes.
-             *
-             * This is intentionally long because
-             * the LLM request may take some time.
-             */
-
-            const controller =
-                new AbortController();
-
-            const timeoutId =
-                setTimeout(
-                    () => controller.abort(),
-                    600000
-                );
-
-
+            addMessage(text, true);
+            loading.style.display = "block";
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 600000);
             try {
-
-                // ----------------------------------------------------
-                // Extract requirements
-                // ----------------------------------------------------
-
-                const response =
-                    await fetch(
-                        "/chat",
-                        {
-                            method:
-                                "POST",
-
-                            headers: {
-                                "Content-Type":
-                                    "application/json"
-                            },
-
-                            body:
-                                JSON.stringify({
-                                    message:
-                                        text,
-
-                                    session_id:
-                                        sessionId
-                                }),
-
-                            signal:
-                                controller.signal
-                        }
-                    );
-
-
+                const response = await fetch("/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: text, session_id: sessionId }),
+                    signal: controller.signal
+                });
                 if (!response.ok) {
-
-                    addMessage(
-                        "Error calling API.",
-                        false
-                    );
-
+                    addMessage("Error calling API.", false);
                     return;
-
                 }
-
-
-                const data =
-                    await response.json();
-
-
-                // ----------------------------------------------------
-                // Update JSON state
-                // ----------------------------------------------------
-
-                jsonState.textContent =
-                    JSON.stringify(
-                        data.state,
-                        null,
-                        2
-                    );
-
-
-                // ----------------------------------------------------
-                // Update completion status
-                // ----------------------------------------------------
-
+                const data = await response.json();
+                jsonState.textContent = JSON.stringify(data.state, null, 2);
                 if (data.is_complete) {
-
-                    completionStatus.textContent =
-                        "Complete ✓";
-
-                    completionStatus.className =
-                        "status-badge status-complete";
-
+                    completionStatus.textContent = "Complete ✓";
+                    completionStatus.className = "status-badge status-complete";
                 } else {
-
-                    completionStatus.textContent =
-                        "Incomplete";
-
-                    completionStatus.className =
-                        "status-badge status-incomplete";
-
+                    completionStatus.textContent = "Incomplete";
+                    completionStatus.className = "status-badge status-incomplete";
                 }
-
-
-                // ----------------------------------------------------
-                // System message
-                // ----------------------------------------------------
-
-                addMessage(
-                    data.message,
-                    false
-                );
-
-
+                addMessage(data.message, false);
                 if (data.is_complete) {
-
-                    addMessage(
-                        "✅ Minimum requirements met!",
-                        false
-                    );
-
+                    addMessage("✅ Minimum requirements met!", false);
                 }
-
-
-                // ----------------------------------------------------
-                // Render bubble graph
-                // ----------------------------------------------------
-
-                renderGraph(
-                    data.state
-                );
-
-
-                // ----------------------------------------------------
-                // Generate deterministic floor plan
-                // ----------------------------------------------------
-
+                renderGraph(data.state);
                 try {
-
-                    const layoutResponse =
-                        await fetch(
-                            `/layout/${sessionId}`
-                        );
-
-
+                    const layoutResponse = await fetch(`/layout/${sessionId}`);
                     if (layoutResponse.ok) {
-
-                        const layoutData =
-                            await layoutResponse.json();
-
-
-                        renderFloorPlan(
-                            layoutData.rooms
-                        );
-
-
+                        const layoutData = await layoutResponse.json();
+                        renderFloorPlan(layoutData.rooms);
                     } else {
-
-                        console.error(
-                            "Failed to generate layout."
-                        );
-
+                        console.error("Failed to generate layout.");
                     }
-
-
                 } catch (layoutError) {
-
-                    console.error(
-                        "Layout error:",
-                        layoutError
-                    );
-
+                    console.error("Layout error:", layoutError);
                 }
-
-
             } catch (err) {
-
-                if (
-                    err.name ===
-                    'AbortError'
-                ) {
-
-                    addMessage(
-                        "Request timed out. The model may be overloaded.",
-                        false
-                    );
-
+                if (err.name === 'AbortError') {
+                    addMessage("Request timed out. The model may be overloaded.", false);
                 } else {
-
-                    console.error(
-                        err
-                    );
-
-                    addMessage(
-                        "Network error.",
-                        false
-                    );
-
+                    console.error(err);
+                    addMessage("Network error.", false);
                 }
-
             } finally {
-
-                clearTimeout(
-                    timeoutId
-                );
-
-                loading.style.display =
-                    "none";
-
+                clearTimeout(timeoutId);
+                loading.style.display = "none";
             }
-
         }
-
 
         // ============================================================
         // RESET
         // ============================================================
 
         async function resetState() {
-
             try {
-
-                await fetch(
-                    `/reset/${sessionId}`,
-                    {
-                        method:
-                            "POST"
-                    }
-                );
-
-
-                // Clear chat
-
-                chatHistory.innerHTML =
-                    "";
-
-
-                // Clear JSON
-
-                jsonState.textContent =
-                    "{}";
-
-
-                // Reset completion status
-
-                completionStatus.textContent =
-                    "Incomplete";
-
-                completionStatus.className =
-                    "status-badge status-incomplete";
-
-
-                // Clear bubble graph
-
-                renderGraph({
-                    rooms: [],
-                    requirements: {}
-                });
-
-
-                // Clear floor plan
-
+                await fetch(`/reset/${sessionId}`, { method: "POST" });
+                chatHistory.innerHTML = "";
+                jsonState.textContent = "{}";
+                completionStatus.textContent = "Incomplete";
+                completionStatus.className = "status-badge status-incomplete";
+                renderGraph({ rooms: [], requirements: {} });
                 renderFloorPlan([]);
-
-
-                addMessage(
-                    "State has been reset.",
-                    false
-                );
-
-
+                addMessage("State has been reset.", false);
             } catch (err) {
-
-                console.error(
-                    err
-                );
-
+                console.error(err);
             }
-
         }
-
     </script>
-
 </body>
-
 </html>

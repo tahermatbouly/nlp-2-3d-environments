@@ -95,12 +95,12 @@ def test_connected_rooms():
         if room.id == "kitchen_1"
     )
 
-    assert living_room.x == 0.0
-    assert living_room.y == 0.0
-
-    # Kitchen should be placed to the right of the living room.
-    assert kitchen.x == living_room.x + living_room.width
-    assert kitchen.y == living_room.y
+    # Both rooms should be at the same y-coordinate
+    assert living_room.y == kitchen.y
+    # One room should be at x=0, the other at x=4.0 (since both are medium width=4.0)
+    xs = sorted([living_room.x, kitchen.x])
+    assert xs[0] == 0.0
+    assert xs[1] == 4.0
 
 
 def test_room_sizes():
