@@ -1,0 +1,231 @@
+{
+  "id": 16975,
+  "net_area": 367.58768066992315,
+  "gross_area": 135.63838,
+  "wall_depth": 3.714631197097944,
+  "rooms": [
+    {
+      "id": "living_0",
+      "type": "living",
+      "area": 12618.701003401442,
+      "connections": [
+        {
+          "target_id": "bedroom_0",
+          "type": "via_door"
+        },
+        {
+          "target_id": "bathroom_1",
+          "type": "via_door"
+        },
+        {
+          "target_id": "bedroom_2",
+          "type": "via_door"
+        },
+        {
+          "target_id": "bedroom_1",
+          "type": "via_door"
+        },
+        {
+          "target_id": "balcony_0",
+          "type": "via_door"
+        },
+        {
+          "target_id": "front_door_0",
+          "type": "via_window"
+        },
+        {
+          "target_id": "kitchen_0",
+          "type": "via_door"
+        },
+        {
+          "target_id": "bathroom_0",
+          "type": "adjacency"
+        },
+        {
+          "target_id": "bathroom_2",
+          "type": "adjacency"
+        }
+      ]
+    },
+    {
+      "id": "kitchen_0",
+      "type": "kitchen",
+      "area": 2962.2834360676643,
+      "connections": [
+        {
+          "target_id": "living_0",
+          "type": "via_door"
+        }
+      ]
+    },
+    {
+      "id": "bedroom_0",
+      "type": "bedroom",
+      "area": 3282.314602831574,
+      "connections": [
+        {
+          "target_id": "living_0",
+          "type": "via_door"
+        },
+        {
+          "target_id": "bathroom_2",
+          "type": "adjacency"
+        },
+        {
+          "target_id": "balcony_0",
+          "type": "adjacency"
+        }
+      ]
+    },
+    {
+      "id": "bedroom_1",
+      "type": "bedroom",
+      "area": 6179.1340329186205,
+      "connections": [
+        {
+          "target_id": "living_0",
+          "type": "via_door"
+        },
+        {
+          "target_id": "bathroom_2",
+          "type": "via_door"
+        },
+        {
+          "target_id": "balcony_1",
+          "type": "via_door"
+        },
+        {
+          "target_id": "bedroom_2",
+          "type": "adjacency"
+        }
+      ]
+    },
+    {
+      "id": "bedroom_2",
+      "type": "bedroom",
+      "area": 4928.071399224188,
+      "connections": [
+        {
+          "target_id": "bathroom_0",
+          "type": "via_door"
+        },
+        {
+          "target_id": "living_0",
+          "type": "via_door"
+        },
+        {
+          "target_id": "bedroom_1",
+          "type": "adjacency"
+        }
+      ]
+    },
+    {
+      "id": "bathroom_0",
+      "type": "bathroom",
+      "area": 1326.7626551878914,
+      "connections": [
+        {
+          "target_id": "bedroom_2",
+          "type": "via_door"
+        },
+        {
+          "target_id": "living_0",
+          "type": "adjacency"
+        },
+        {
+          "target_id": "bathroom_1",
+          "type": "adjacency"
+        }
+      ]
+    },
+    {
+      "id": "bathroom_1",
+      "type": "bathroom",
+      "area": 969.7268576124127,
+      "connections": [
+        {
+          "target_id": "living_0",
+          "type": "via_door"
+        },
+        {
+          "target_id": "bathroom_0",
+          "type": "adjacency"
+        }
+      ]
+    },
+    {
+      "id": "bathroom_2",
+      "type": "bathroom",
+      "area": 1466.855606356798,
+      "connections": [
+        {
+          "target_id": "bedroom_1",
+          "type": "via_door"
+        },
+        {
+          "target_id": "living_0",
+          "type": "adjacency"
+        },
+        {
+          "target_id": "bedroom_0",
+          "type": "adjacency"
+        }
+      ]
+    },
+    {
+      "id": "balcony_0",
+      "type": "balcony",
+      "area": 1283.8340354042605,
+      "connections": [
+        {
+          "target_id": "living_0",
+          "type": "via_door"
+        },
+        {
+          "target_id": "bedroom_0",
+          "type": "adjacency"
+        }
+      ]
+    },
+    {
+      "id": "balcony_1",
+      "type": "balcony",
+      "area": 923.5402622202008,
+      "connections": [
+        {
+          "target_id": "bedroom_1",
+          "type": "via_door"
+        }
+      ]
+    },
+    {
+      "id": "front_door_0",
+      "type": "front_door",
+      "area": 79.34128835010654,
+      "connections": [
+        {
+          "target_id": "living_0",
+          "type": "via_window"
+        }
+      ]
+    }
+  ],
+  "room_counts": {
+    "bedroom": 3,
+    "bathroom": 3,
+    "kitchen": 1,
+    "living": 1,
+    "balcony": 2,
+    "front_door": 1
+  },
+  "other_features_present": {
+    "wall": true,
+    "window": true,
+    "door": true,
+    "inner": true,
+    "garden": false,
+    "parking": false,
+    "pool": false,
+    "land": true
+  }
+}
