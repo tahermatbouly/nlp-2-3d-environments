@@ -8,6 +8,7 @@ Features
   - Gradient clipping
   - Verbose per-epoch metrics: IoU, Precision, Recall, F1, overlap rate
   - Best model selection based on *generation* MSE (not reconstruction loss)
+  - Overlap penalty to prevent room overlaps in generated floor plans
 
 Usage
 -----
@@ -31,6 +32,55 @@ from dataset import FloorPlanDataset
 from model import FloorPlanCVAE
 
 
+# ── Overlap loss ────────────────────────────────────────────────────────
+
+def box_overlap_loss(pred_boxes, eps=1e-6):
+    """
+    Compute differentiable overlap penalty for bounding boxes.
+    pred_boxes: tensor of shape (N, 4) with format (cx, cy, w, h) normalized to [0,1]
+    Returns: scalar loss encouraging non-overlap
+    """
+    if len(pred_boxes) < 2:
+        return torch.tensor(0.0, device=pred_boxes.device)
+
+    # Convert to corner coordinates: (x1, y1, x2, y2)
+    x1 = pred_boxes[:, 0] - pred_boxes[:, 2] / 2  # cx - w/2
+    y1 = pred_boxes[:, 1] - pred_boxes[:, 3] / 2  # cy - h/2
+    x2 = pred_boxes[:, 0] + pred_boxes[:, 2] / 2  # cx + w/2
+    y2 = pred_boxes[:, 1] + pred_boxes[:, 3] / 2  # cy + h/2
+
+    # Compute pairwise overlaps
+    overlap_loss = 0.0
+    pair_count = 0
+
+    for i in range(len(pred_boxes)):
+        for j in range(i + 1, len(pred_boxes)):
+            # Intersection dimensions
+            ix1 = torch.max(x1[i], x1[j])
+            iy1 = torch.max(y1[i], y1[j])
+            ix2 = torch.min(x2[i], x2[j])
+            iy2 = torch.min(y2[i], y2[j])
+
+            # Intersection area (clamped to avoid negatives)
+            iw = torch.clamp(ix2 - ix1, min=0.0)
+            ih = torch.clamp(iy2 - iy1, min=0.0)
+            intersection = iw * ih
+
+            # Union area
+            area_i = (x2[i] - x1[i]) * (y2[i] - y1[i])
+            area_j = (x2[j] - x1[j]) * (y2[j] - y1[j])
+            union = area_i + area_j - intersection + eps  # eps for numerical stability
+
+            # IoU (Intersection over Union)
+            iou = intersection / union
+
+            # Add to loss (we want to minimize overlap, so penalize high IoU)
+            overlap_loss += iou
+            pair_count += 1
+
+    return overlap_loss / max(pair_count, 1)
+
+
 # ── KL annealing ────────────────────────────────────────────────────────
 
 def get_kl_weight(epoch: int, total_epochs: int) -> float:
@@ -52,15 +102,16 @@ def get_kl_weight(epoch: int, total_epochs: int) -> float:
 
 # ── loss function ───────────────────────────────────────────────────────
 
-def vae_loss(pred, target, mu, logvar, kl_weight):
-    """Combined reconstruction (MSE) + KL-divergence loss.
+def vae_loss(pred, target, mu, logvar, kl_weight, overlap_weight=0.0):
+    """Combined reconstruction (MSE) + KL-divergence + overlap loss.
 
-    Returns (total, recon, kl) so we can log each part separately.
+    Returns (total, recon, kl, overlap) so we can log each part separately.
     """
     recon = F.mse_loss(pred, target)
     kl = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-    total = recon + kl_weight * kl
-    return total, recon, kl
+    overlap = box_overlap_loss(pred)
+    total = recon + kl_weight * kl + overlap_weight * overlap
+    return total, recon, kl, overlap
 
 
 # ── IoU and metric helpers ──────────────────────────────────────────────
@@ -127,17 +178,18 @@ def validate(model, val_loader, kl_weight, device, compute_gen_metrics=True):
     model.eval()
 
     # Reconstruction metrics (via posterior z)
-    v_loss, v_recon, v_kl, v_n = 0.0, 0.0, 0.0, 0
+    v_loss, v_recon, v_kl, v_overlap, v_n = 0.0, 0.0, 0.0, 0.0, 0
     # mu/logvar stats
     all_mu, all_logvar = [], []
 
     for batch in val_loader:
         batch = batch.to(device)
         pred, mu, logvar = model(batch)
-        loss, recon, kl = vae_loss(pred, batch.y, mu, logvar, kl_weight)
+        loss, recon, kl, overlap = vae_loss(pred, batch.y, mu, logvar, kl_weight, cfg.OVERLAP_WEIGHT)
         v_loss  += loss.item()
         v_recon += recon.item()
         v_kl    += kl.item()
+        v_overlap += overlap.item()
         v_n     += 1
         all_mu.append(mu.cpu())
         all_logvar.append(logvar.cpu())
@@ -146,6 +198,7 @@ def validate(model, val_loader, kl_weight, device, compute_gen_metrics=True):
         "val_loss":  v_loss  / max(v_n, 1),
         "val_recon": v_recon / max(v_n, 1),
         "val_kl":    v_kl    / max(v_n, 1),
+        "val_overlap": v_overlap / max(v_n, 1),
     }
 
     # mu / sigma statistics
@@ -214,9 +267,11 @@ def log_validation(epoch, total_epochs, train_metrics, val_metrics, kl_weight, l
     """Print a structured, readable validation summary."""
     print(f"\nEpoch {epoch:4d}/{total_epochs}  lr={lr:.2e}  kl_w={kl_weight:.4f}")
     print(f"  ├─ Train  loss={train_metrics['loss']:.6f}  "
-          f"recon={train_metrics['recon']:.6f}  kl={train_metrics['kl']:.4f}")
+          f"recon={train_metrics['recon']:.6f}  kl={train_metrics['kl']:.4f}  "
+          f"overlap={train_metrics.get('overlap', 0):.6f}")
     print(f"  ├─ Val    loss={val_metrics['val_loss']:.6f}  "
-          f"recon={val_metrics['val_recon']:.6f}  kl={val_metrics['val_kl']:.4f}")
+          f"recon={val_metrics['val_recon']:.6f}  kl={val_metrics['val_kl']:.4f}  "
+          f"overlap={val_metrics.get('val_overlap', 0):.6f}")
 
     if "gen_mse" in val_metrics:
         print(f"  ├─ Gen    MSE={val_metrics['gen_mse']:.6f}  "
@@ -337,14 +392,14 @@ def main():
 
         # ── train ───────────────────────────────────────────────────────
         model.train()
-        sum_loss, sum_recon, sum_kl, n = 0.0, 0.0, 0.0, 0
+        sum_loss, sum_recon, sum_kl, sum_overlap, n = 0.0, 0.0, 0.0, 0.0, 0
 
         for batch in train_loader:
             batch = batch.to(device)
             optimizer.zero_grad()
 
             pred, mu, logvar = model(batch)
-            loss, recon, kl = vae_loss(pred, batch.y, mu, logvar, kl_weight)
+            loss, recon, kl, overlap = vae_loss(pred, batch.y, mu, logvar, kl_weight, cfg.OVERLAP_WEIGHT)
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.GRAD_CLIP_NORM)
@@ -353,6 +408,7 @@ def main():
             sum_loss  += loss.item()
             sum_recon += recon.item()
             sum_kl    += kl.item()
+            sum_overlap += overlap.item()
             n += 1
 
         scheduler.step()
@@ -361,6 +417,7 @@ def main():
             "loss":  sum_loss  / n,
             "recon": sum_recon / n,
             "kl":    sum_kl    / n,
+            "overlap": sum_overlap / n,
         }
 
         # ── validate ────────────────────────────────────────────────────
@@ -386,7 +443,8 @@ def main():
             current_lr = optimizer.param_groups[0]["lr"]
             print(f"Epoch {epoch:4d}/{args.epochs}  "
                   f"train {train_m['loss']:.6f}  "
-                  f"(recon {train_m['recon']:.6f}  kl {train_m['kl']:.4f})  "
+                  f"(recon {train_m['recon']:.6f}  kl {train_m['kl']:.4f}  "
+                  f"overlap {train_m.get('overlap', 0):.6f})  "
                   f"lr={current_lr:.2e}  kl_w={kl_weight:.4f}")
 
         # periodic checkpoint

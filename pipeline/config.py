@@ -54,6 +54,9 @@ LR_MIN              = 1e-6             # minimum LR for cosine anneal
 # Gradient clipping
 GRAD_CLIP_NORM      = 1.0              # max gradient L2 norm
 
+# Overlap loss weight
+OVERLAP_WEIGHT = 0.1                   # penalty for room overlaps (start small)
+
 
 # ── Evaluation ─────────────────────────────────────────────────────────
 EVAL_EVERY = 5                          # was 10 – validate more frequently
