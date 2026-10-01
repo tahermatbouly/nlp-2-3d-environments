@@ -1,13 +1,13 @@
 """
-infer.py — Generate a floor plan from a JSON description.
+infer.py — Generate a floorplan image from a JSON description using a diffusion model.
 
 Usage
 -----
     # From an existing JSON file in training-data/
     python infer.py --json ../training-data/42.json
 
-    # Generate 3 different layouts for the same description
-    python infer.py --json ../training-data/42.json --num-samples 3
+    # Generate multiple samples with guidance
+    python infer.py --json ../training-data/42.json --num-samples 3 --guidance-scale 3.0
 
     # From a hand-written JSON (only needs "rooms" with types, areas, connections)
     python infer.py --json my_house.json
@@ -21,32 +21,19 @@ import json
 import argparse
 
 import torch
+import numpy as np
+from PIL import Image
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 
 import config as cfg
-from model import FloorPlanCVAE
+from model import UNet, GaussianDiffusion
+from dataset import FloorPlanDataset  # For json_to_data function? We'll rewrite it.
 from torch_geometric.data import Data
 
 
-# ── room colours ────────────────────────────────────────────────────────
-
-ROOM_COLORS = {
-    "living":     "#d9d9d9",
-    "bedroom":    "#66c2a5",
-    "bathroom":   "#fc8d62",
-    "kitchen":    "#8da0cb",
-    "balcony":    "#b3b3b3",
-    "front_door": "#a63603",
-    "storage":    "#FF8C69",
-    "stair":      "#9e9ac8",
-}
-
-
-# ── convert JSON → PyG Data ────────────────────────────────────────────
-
+# ── Recreate json_to_data from the old infer.py (adapted for our Data format) ────────
 def json_to_data(desc: dict, device: torch.device) -> Data:
-    """Turn a simplified JSON description into a PyG Data object.
+    """Turn a simplified JSON description into a PyG Data object for conditioning.
 
     The JSON only needs a ``rooms`` list.  Each room needs:
         id, type, area, connections[{target_id, type}]
@@ -58,7 +45,7 @@ def json_to_data(desc: dict, device: torch.device) -> Data:
     # map room string IDs → integer indices
     id_to_idx = {r["id"]: i for i, r in enumerate(rooms)}
 
-    # ── node features ───────────────────────────────────────────────────
+    # ── node features ───────────────────────────────────────────────
     max_area = max(r["area"] for r in rooms) or 1.0
     node_features = []
 
@@ -71,7 +58,7 @@ def json_to_data(desc: dict, device: torch.device) -> Data:
         area_norm = r["area"] / max_area
         node_features.append(onehot + [area_norm])
 
-    # ── edges ───────────────────────────────────────────────────────────
+    # ── edges ───────────────────────────────────────────────────────
     src, dst, edge_attrs = [], [], []
     seen = set()
 
@@ -104,80 +91,95 @@ def json_to_data(desc: dict, device: torch.device) -> Data:
 
     if not edge_attrs:
         edge_index = torch.zeros((2, 0), dtype=torch.long)
-        edge_attr  = torch.zeros((0, cfg.NUM_EDGE_TYPES), dtype=torch.float)
+        edge_attr = torch.zeros((0, cfg.NUM_EDGE_TYPES), dtype=torch.float)
     else:
         edge_index = torch.tensor([src, dst], dtype=torch.long)
-        edge_attr  = torch.tensor(edge_attrs, dtype=torch.float)
+        edge_attr = torch.tensor(edge_attrs, dtype=torch.float)
 
     data = Data(
         x=torch.tensor(node_features, dtype=torch.float),
         edge_index=edge_index,
         edge_attr=edge_attr,
+        # We don't have target_image for inference, but the model expects it in the Data object?
+        # We'll set it to zero tensor; the diffusion model doesn't use it during sampling.
+        target_image=torch.zeros((3, cfg.IMAGE_SIZE, cfg.IMAGE_SIZE), dtype=torch.float),
+        plan_id=desc.get("id", "?"),
+        plan_bounds=torch.tensor([0.0, 0.0, 1.0], dtype=torch.float),  # dummy
     )
     return data.to(device)
 
 
-# ── drawing ─────────────────────────────────────────────────────────────
-
-def draw_layout(bboxes, room_types, title="", ax=None):
-    """Draw predicted bounding boxes as coloured rectangles."""
-    if ax is None:
-        _, ax = plt.subplots(figsize=(6, 6))
-
-    for (cx, cy, w, h), rtype in zip(bboxes, room_types):
-        color = ROOM_COLORS.get(rtype, "#cccccc")
-        rect = mpatches.FancyBboxPatch(
-            (cx - w / 2, cy - h / 2), w, h,
-            boxstyle="round,pad=0.005",
-            linewidth=2, edgecolor="black",
-            facecolor=color, alpha=0.75,
-        )
-        ax.add_patch(rect)
-        ax.text(cx, cy, rtype.replace("_", "\n"),
-                ha="center", va="center", fontsize=7, fontweight="bold")
-
-    ax.set_xlim(-0.05, 1.05)
-    ax.set_ylim(-0.05, 1.05)
-    ax.set_aspect("equal")
-    ax.set_title(title, fontsize=10, fontweight="bold")
-    ax.invert_yaxis()
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    return ax
+# ── Helper to denormalize and save image ──────────────────────────────────────
+def save_image(tensor, path):
+    """Save a torch tensor [3, H, W] in [-1, 1] as a PNG image."""
+    # Denormalize to [0, 1]
+    img = (tensor + 1.0) / 2.0
+    img = torch.clamp(img, 0.0, 1.0)
+    # Convert to numpy and transpose to HWC
+    img_np = img.permute(1, 2, 0).cpu().numpy()
+    # Convert to uint8
+    img_np = (img_np * 255).astype(np.uint8)
+    # Save using PIL
+    img_pil = Image.fromarray(img_np)
+    img_pil.save(path)
 
 
-# ── main ────────────────────────────────────────────────────────────────
-
+# ── Main ─────────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate a floor plan from a JSON description")
+        description="Generate a floorplan image from a JSON description.")
     parser.add_argument("--json", required=True,
                         help="Path to a JSON file describing the house")
     parser.add_argument("--num-samples", type=int, default=1,
                         help="Number of different layouts to generate "
                              "(each uses a different random seed)")
+    parser.add_argument("--guidance-scale", type=float, default=2.5,
+                        help="Classifier-free guidance scale (higher = stronger conditioning)")
     parser.add_argument("--output", type=str, default=None,
-                        help="Save image to this path instead of displaying")
+                        help="Save image(s) to this path (if num-samples>1, appends index)")
     parser.add_argument("--model", type=str, default=None,
                         help="Path to model checkpoint "
-                             "(default: checkpoints/best_model.pt)")
+                             "(default: checkpoints/latest.pt)")
     args = parser.parse_args()
 
     device = torch.device(cfg.DEVICE if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
 
-    # ── load model ──────────────────────────────────────────────────────
-    model_path = args.model or os.path.join(cfg.CHECKPOINT_DIR, "best_model.pt")
+    # ── Load model ────────────────────────────────────────────────────────
+    model_path = args.model or os.path.join(cfg.CHECKPOINT_DIR, "latest.pt")
     if not os.path.exists(model_path):
         print(f"ERROR: No model found at {model_path}")
         print("Run  python train.py  first.")
         return
 
-    model = FloorPlanCVAE().to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.eval()
-    print(f"Loaded model from {model_path}")
+    print(f"Loading model from {model_path}")
+    checkpoint = torch.load(model_path, map_location=device)
 
-    # ── load JSON description ───────────────────────────────────────────
+    # Initialize model architecture (must match training)
+    cond_emb_dim = cfg.BASE_CHANNELS
+    denoise_model = UNet(
+        in_channels=cfg.INPUT_CHANNELS,
+        out_channels=cfg.INPUT_CHANNELS,
+        base_channels=cfg.BASE_CHANNELS,
+        ch_mults=(1, 2, 4, 8),
+        num_res_blocks=2,
+        time_emb_dim=cfg.TIME_EMB_DIM if hasattr(cfg, 'TIME_EMB_DIM') else 256,
+        cond_emb_dim=cond_emb_dim,
+        dropout=cfg.DROPOUT
+    ).to(device)
+    denoise_model.load_state_dict(checkpoint['model_state_dict'])
+    denoise_model.eval()
+
+    # Initialize diffusion
+    diffusion = GaussianDiffusion(
+        model=denoise_model,
+        image_size=cfg.IMAGE_SIZE,
+        timesteps=cfg.TIMESTEPS,
+        beta_start=cfg.BETA_START,
+        beta_end=cfg.BETA_END
+    ).to(device)
+
+    # ── Load JSON description ─────────────────────────────────────────────
     with open(args.json) as f:
         desc = json.load(f)
 
@@ -186,38 +188,53 @@ def main():
     print(f"Plan {plan_id}: {len(desc['rooms'])} rooms — "
           f"{', '.join(room_types)}")
 
-    # ── convert to tensors ──────────────────────────────────────────────
+    # ── Convert to conditioning data ───────────────────────────────────────
     data = json_to_data(desc, device)
 
-    # ── generate layouts ────────────────────────────────────────────────
+    # ── Generate layouts ───────────────────────────────────────────────────
     n = args.num_samples
-    fig, axes = plt.subplots(1, n, figsize=(6 * n, 6))
     if n == 1:
+        fig, axes = plt.subplots(1, 1, figsize=(6, 6))
         axes = [axes]
+    else:
+        fig, axes = plt.subplots(1, n, figsize=(6 * n, 6))
 
     for i, ax in enumerate(axes):
+        # Set seed for reproducibility if needed
+        if args.num_samples > 1:
+            torch.manual_seed(i + 42)  # different seed per sample
+
+        # Sample with guidance
         with torch.no_grad():
-            pred = model.generate(data)
+            sample = diffusion.sample_with_guidance(
+                batch_size=1,
+                graph_data=data,
+                guidance_scale=args.guidance_scale
+            )  # shape [1, 3, H, W]
+            sample = sample.squeeze(0)  # [3, H, W]
 
-        bboxes = pred.cpu().numpy()
-        draw_layout(bboxes, room_types,
-                    title=f"Generated layout (sample {i + 1})", ax=ax)
+        # Save or display
+        if args.output:
+            if n == 1:
+                save_path = args.output
+            else:
+                base, ext = os.path.splitext(args.output)
+                save_path = f"{base}_{i}{ext}"
+            save_image(sample, save_path)
+            print(f"Saved → {save_path}")
+        else:
+            # Display using matplotlib
+            ax.imshow(np.transpose(sample.cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)  # [0,1]
+            ax.set_title(f"Generated layout (sample {i + 1})")
+            ax.axis('off')
 
-        # print coordinates
-        print(f"\n── Sample {i + 1} ──")
-        for room, (cx, cy, w, h) in zip(desc["rooms"], bboxes):
-            print(f"  {room['id']:20s}  cx={cx:.3f}  cy={cy:.3f}  "
-                  f"w={w:.3f}  h={h:.3f}")
+            # Print coordinates? We could extract bounding boxes from the image, but skip for now.
+            # Instead, we can print a message.
+            if i == 0:
+                print(f"Generated {n} sample(s).")
 
-    plt.tight_layout()
-
-    if args.output:
-        plt.savefig(args.output, dpi=150, bbox_inches="tight")
-        print(f"\nSaved → {args.output}")
-    else:
-        plt.savefig(os.path.join(cfg.CHECKPOINT_DIR, "inference_output.png"),
-                    dpi=150, bbox_inches="tight")
-        print(f"\nSaved → {os.path.join(cfg.CHECKPOINT_DIR, 'inference_output.png')}")
+    if not args.output:
+        plt.tight_layout()
         plt.show()
 
 

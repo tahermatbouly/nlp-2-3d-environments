@@ -28,37 +28,56 @@ NUM_EDGE_TYPES = len(EDGE_TYPES)   # 4
 
 
 # ── Model ──────────────────────────────────────────────────────────────
-NODE_FEATURE_DIM = NUM_ROOM_TYPES + 1   # 8 one-hot type + 1 normalized area = 9
-GNN_HIDDEN_DIM = 128                    # was 64 – more capacity for graph structure
-LATENT_DIM = 32
-NUM_GNN_LAYERS = 3
-DROPOUT = 0.1                           # regularisation for GNN + MLP layers
+# Node features: one-hot room type (8) + normalized area (1) = 9
+NODE_FEATURE_DIM = NUM_ROOM_TYPES + 1   # 9
+# GNN hidden dimension for encoding the constraint graph
+GNN_HIDDEN_DIM = 256                    # Increased capacity for graph encoding
+# Diffusion model channels (base width)
+BASE_CHANNELS = 128
+# Number of diffusion timesteps
+TIMESTEPS = 1000
+# Image size for generated floorplans
+IMAGE_SIZE = 256
+# Input channels to diffusion model (RGB = 3)
+INPUT_CHANNELS = 3
+# Whether to use classifier-free guidance
+USE_CLASSIFIER_FREE_GUIDANCE = True
+# Guidance strength for classifier-free guidance
+GUIDANCE_STRENGTH = 2.5
+# Dropout rate
+DROPOUT = 0.1
 
 
 # ── Training ───────────────────────────────────────────────────────────
-BATCH_SIZE = 64
-LEARNING_RATE = 5e-4                    # was 1e-3 – gentler start
-EPOCHS = 500
-DEVICE = "cuda"                         # "cuda" or "cpu"
+BATCH_SIZE = 16                     # Reduced for larger model and image resolution
+LEARNING_RATE = 2e-4                # Adjusted for diffusion training
+EPOCHS = 1000                       # More epochs may be needed
+DEVICE = "cuda"                     # "cuda" or "cpu"
 
-# KL annealing — ramp weight from 0 → KL_WEIGHT_MAX over training
-KL_WEIGHT_MAX       = 0.05             # was fixed 0.001 – target KL weight
-KL_ANNEAL_STRATEGY  = "cyclical"       # "monotonic" or "cyclical"
-KL_ANNEAL_EPOCHS    = 100              # ramp length (monotonic) / cycle base (cyclical)
-KL_ANNEAL_CYCLES    = 4                # number of cycles (cyclical only)
+# Noise schedule (linear beta schedule)
+BETA_START = 0.0001
+BETA_END = 0.02
 
-# LR schedule
-LR_WARMUP_EPOCHS    = 10               # linear warmup before cosine decay
-LR_MIN              = 1e-6             # minimum LR for cosine anneal
+# Optimizer settings
+ADAM_BETA1 = 0.9
+ADAM_BETA2 = 0.999
 
 # Gradient clipping
-GRAD_CLIP_NORM      = 1.0              # max gradient L2 norm
+GRAD_CLIP_NORM = 1.0                # max gradient L2 norm
 
-# Overlap loss weight
-OVERLAP_WEIGHT = 0.1                   # penalty for room overlaps (start small)
+# EMA (Exponential Moving Average) for model weights
+EMA_DECAY = 0.9999                  # Exponential moving average decay
+EMA_START_STEP = 1000               # Start EMA after this many steps
+EMA_UPDATE_EVERY = 10               # Update EMA every N steps
 
 
 # ── Evaluation ─────────────────────────────────────────────────────────
-EVAL_EVERY = 5                          # was 10 – validate more frequently
-SAVE_EVERY = 50                         # save a periodic checkpoint every N epochs
-IOU_THRESHOLDS = [0.25, 0.50, 0.75]    # thresholds for precision / recall / F1
+EVAL_EVERY = 10                     # Validate every N epochs
+SAVE_EVERY = 50                     # Save a periodic checkpoint every N epochs
+NUM_SAMPLES_TO_GENERATE = 4         # How many samples to generate during evaluation
+
+
+# ── Diffusion Loss Weights (if needed) ─────────────────────────────────
+# We'll use simple L2 loss on the noise prediction, so no additional weights needed.
+# If we want to weight different parts of the image, we can add here.
+LOSS_TYPE = "l2"                    # Options: l2, l1, huber
