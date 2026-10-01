@@ -187,19 +187,9 @@ class UNet(nn.Module):
             nn.Linear(time_emb_dim * 4, time_emb_dim),
         )
 
-        # Graph encoder (we'll pass it externally, but we need to know its output dim)
-        # We'll assume the graph encoder outputs cond_emb_dim
-        # The graph encoder will be defined outside and passed in, or we can instantiate here.
-        # For simplicity, we'll assume the conditioning embedding is provided as input to forward.
-        # However, we need to encode the graph inside the model.
-        # Let's instantiate the graph encoder here.
-        self.graph_encoder = GraphEncoder(
-            in_dim=cfg.NODE_FEATURE_DIM,
-            hidden_dim=self.cond_emb_dim,
-            num_layers=3,
-            edge_dim=cfg.NUM_EDGE_TYPES,
-            dropout=dropout
-        )
+        # Graph encoder will be provided externally to avoid redundant computation
+        # We'll assume the conditioning embedding is provided as input to forward
+        # or computed externally and passed as cond_emb parameter
 
         # Initial projection
         self.init_conv = nn.Conv2d(in_channels, base_channels, 3, padding=1)
@@ -236,34 +226,24 @@ class UNet(nn.Module):
             nn.Conv2d(base_channels, out_channels, 3, padding=1)
         )
 
-    def forward(self, x, t, graph_data):
+    def forward(self, x, t, graph_data=None, cond_emb=None):
         """
         x: [B, 3, H, W] noisy image
         t: [B] timesteps
         graph_data: PyG Data object containing graph information (x, edge_index, edge_attr, etc.)
+        cond_emb: Precomputed graph embedding [B, cond_emb_dim] (optional)
+                  If provided, skips internal graph encoding
         """
         # Timestep embedding
         t_emb = self.time_mlp(t)
 
-        # Encode the constraint graph to get global embedding
-        # We need to handle batched graph data.
-        # For simplicity, we assume graph_data is a single graph (batch size 1).
-        # In practice, we need to handle batching.
-        # We'll assume the graph_data is already batched by PyG's Batch.
-        # We'll encode the graph to get a global embedding per graph in the batch.
-        global_emb, _ = self.graph_encoder(
-            graph_data.x,
-            graph_data.edge_index,
-            graph_data.edge_attr if hasattr(graph_data, 'edge_attr') else None
-        )  # global_emb: [num_graphs, cond_emb_dim]
-        # If batched, global_emb has shape [B, cond_emb_dim]; if not, we need to expand.
+        # Use precomputed conditioning embedding
+        global_emb = cond_emb
+        # Ensure correct shape for broadcasting
         if global_emb.dim() == 2:
             pass  # already [B, cond_emb_dim]
         else:
             global_emb = global_emb.unsqueeze(0)  # [1, cond_emb_dim]
-            # If batch size > 1, we need to repeat. We'll assume batch size matches.
-            # For now, we assume the graph_data is for a single image (batch size 1).
-            # We'll expand to match the batch size of x.
             if global_emb.shape[0] == 1 and x.shape[0] > 1:
                 global_emb = global_emb.repeat(x.shape[0], 1)
 
@@ -351,16 +331,16 @@ class GaussianDiffusion:
         sqrt_one_minus_alphas_cumprod_t = extract(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape)
         return sqrt_alphas_cumprod_t * x_start + sqrt_one_minus_alphas_cumprod_t * noise
 
-    def p_losses(self, x_start, t, graph_data, noise=None):
+    def p_losses(self, x_start, t, graph_data=None, noise=None, cond_emb=None):
         """Compute loss at timestep t."""
         if noise is None:
             noise = torch.randn_like(x_start)
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
-        predicted_noise = self.model(x_noisy, t, graph_data)
+        predicted_noise = self.model(x_noisy, t, graph_data=graph_data, cond_emb=cond_emb)
         return F.mse_loss(predicted_noise, noise)
 
     @torch.no_grad()
-    def p_sample(self, x, t, graph_data, t_index):
+    def p_sample(self, x, t, graph_data, t_index, cond_emb=None):
         """Sample a single step from the model."""
         betas_t = extract(self.betas, t, x.shape)
         sqrt_one_minus_alphas_cumprod_t = extract(self.sqrt_one_minus_alphas_cumprod, t, x.shape)
@@ -368,7 +348,7 @@ class GaussianDiffusion:
 
         # Equation 11 in the paper
         model_mean = sqrt_recip_alphas_t * (
-            x - betas_t * self.model(x, t, graph_data) / sqrt_one_minus_alphas_cumprod_t
+            x - betas_t * self.model(x, t, graph_data, cond_emb=cond_emb) / sqrt_one_minus_alphas_cumprod_t
         )
 
         if t_index == 0:
@@ -379,7 +359,7 @@ class GaussianDiffusion:
             return model_mean + torch.sqrt(posterior_variance_t) * noise
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, graph_data):
+    def p_sample_loop(self, shape, graph_data, cond_emb=None):
         """Generate samples by iterating through timesteps."""
         device = next(self.model.parameters()).device
         b = shape[0]
@@ -387,19 +367,19 @@ class GaussianDiffusion:
         img = torch.randn(shape, device=device)
         for i in reversed(range(0, self.timesteps)):
             t = torch.full((b,), i, device=device, dtype=torch.long)
-            img = self.p_sample(img, t, graph_data, i)
+            img = self.p_sample(img, t, graph_data, i, cond_emb=cond_emb)
             # Optionally clip to [-1, 1]
             img = torch.clamp(img, -1.0, 1.0)
         return img
 
     @torch.no_grad()
-    def sample(self, batch_size=1, graph_data=None):
+    def sample(self, batch_size=1, graph_data=None, cond_emb=None):
         """Generate samples."""
-        return self.p_sample_loop((batch_size, self.image_size, self.image_size, 3), graph_data)
+        return self.p_sample_loop((batch_size, self.image_size, self.image_size, 3), graph_data, cond_emb=cond_emb)
 
     @torch.no_grad()
-    def sample_with_guidance(self, batch_size=1, graph_data=None, guidance_scale=2.5):
+    def sample_with_guidance(self, batch_size=1, graph_data=None, cond_emb=None, guidance_scale=2.5):
         """Generate samples with classifier-free guidance."""
         # We need to implement classifier-free guidance in the model.
         # For now, we'll just call sample without guidance.
-        return self.sample(batch_size, graph_data)
+        return self.sample(batch_size, graph_data, cond_emb=cond_emb)

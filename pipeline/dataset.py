@@ -173,7 +173,7 @@ class FloorPlanDataset(Dataset):
 
         # Cache for loaded data objects (to avoid reprocessing the same index multiple times)
         # Using LRU cache with maximum size to prevent memory issues
-        self._cache_max_size = 50  # Cache up to 50 items
+        self._cache_max_size = 150  # Increased from 50 to 150 for better hit rate
         self._cache = OrderedDict()
 
     # ── PyG interface ───────────────────────────────────────────────────
@@ -216,9 +216,10 @@ class FloorPlanDataset(Dataset):
             # Convert hex to RGB float in [0,1]
             color_hex = color_hex.lstrip('#')
             color_rgb = np.array([int(color_hex[i:i+2], 16) for i in (0, 2, 4)]) / 255.0
-            # Apply color where mask is 255 (foreground)
-            for c in range(3):
-                canvas[:, :, c] = np.where(mask == 255, color_rgb[c], canvas[:, :, c])
+            # Create color array for vectorized application
+            color_array = np.ones((img_size, img_size, 3), dtype=np.float32) * np.array(color_rgb)
+            # Apply color where mask is 255 (foreground) - vectorized across all channels
+            canvas = np.where(mask[..., None] == 255, color_array, canvas)
 
         # Convert canvas to torch tensor [3, H, W] and normalize to [-1, 1] for diffusion
         target_image = torch.from_numpy(canvas).permute(2, 0, 1)  # [3, H, W]

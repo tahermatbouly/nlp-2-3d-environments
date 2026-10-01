@@ -95,8 +95,8 @@ def main():
     print(f"Train : {len(train_ds)} plans")
     print(f"Val   : {len(val_ds)} plans")
 
-    train_loader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=2, pin_memory=False)
-    val_loader   = DataLoader(val_ds,   batch_size=1, shuffle=False, num_workers=2, pin_memory=False)
+    train_loader = DataLoader(train_ds, batch_size=cfg.BATCH_SIZE, shuffle=True, num_workers=min(8, os.cpu_count()), pin_memory=True)
+    val_loader   = DataLoader(val_ds,   batch_size=cfg.BATCH_SIZE, shuffle=False, num_workers=min(4, os.cpu_count()), pin_memory=True)
 
     # ── Initialize model and diffusion ─────────────────────────────────────
     print("Initializing model...")
@@ -183,14 +183,49 @@ def main():
 
             optimizer.zero_grad()
 
+            # Precompute graph embedding for the entire batch (to avoid redundant computation)
+            with torch.no_grad():
+                # Temporary access to graph encoder to compute embedding
+                # We need to access the model's graph encoder
+                graph_encoder = denoise_model.graph_encoder if hasattr(denoise_model, 'graph_encoder') else None
+                if graph_encoder is not None:
+                    # Compute graph embedding for the batch
+                    global_emb, _ = graph_encoder(
+                        batch.x,
+                        batch.edge_index,
+                        batch.edge_attr if hasattr(batch, 'edge_attr') else None
+                    )
+                    # Handle shape for broadcasting
+                    if global_emb.dim() == 2:
+                        # Already [B, cond_emb_dim]
+                        pass
+                    else:
+                        global_emb = global_emb.unsqueeze(0)  # [1, cond_emb_dim]
+                        if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
+                            global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
+                else:
+                    # Fallback: compute using the model (less efficient but works)
+                    global_emb, _ = denoise_model.graph_encoder(
+                        batch.x,
+                        batch.edge_index,
+                        batch.edge_attr if hasattr(batch, 'edge_attr') else None
+                    )
+                    if global_emb.dim() == 2:
+                        pass
+                    else:
+                        global_emb = global_emb.unsqueeze(0)
+                        if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
+                            global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
+
             # Sample random timesteps for each image in the batch
             t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
 
-            # Compute loss
+            # Compute loss using precomputed graph embedding
             loss = diffusion.p_losses(
                 x_start=batch.target_img,
                 t=t,
-                graph_data=batch
+                graph_data=batch,  # Still needed for compatibility, but model will ignore if cond_emb provided
+                cond_emb=global_emb
             )
 
             loss.backward()
@@ -222,11 +257,26 @@ def main():
             val_batches = 0
             for batch in val_loader:
                 batch = batch.to(device)
+                # Precompute graph embedding once per batch
+                with torch.no_grad():
+                    global_emb, _ = denoise_model.graph_encoder(
+                        batch.x,
+                        batch.edge_index,
+                        batch.edge_attr if hasattr(batch, 'edge_attr') else None
+                    )
+                    if global_emb.dim() == 2:
+                        pass  # already [B, cond_emb_dim]
+                    else:
+                        global_emb = global_emb.unsqueeze(0)  # [1, cond_emb_dim]
+                        if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
+                            global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
+
                 t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
                 loss = diffusion.p_losses(
                     x_start=batch.target_img,
                     t=t,
-                    graph_data=batch
+                    graph_data=batch,  # Still needed for compatibility, but model will ignore if cond_emb provided
+                    cond_emb=global_emb
                 )
                 val_loss += loss.item()
                 val_batches += 1
@@ -239,11 +289,26 @@ def main():
             ema_val_batches = 0
             for batch in val_loader:
                 batch = batch.to(device)
+                # Precompute graph embedding once per batch
+                with torch.no_grad():
+                    global_emb, _ = denoise_model.graph_encoder(
+                        batch.x,
+                        batch.edge_index,
+                        batch.edge_attr if hasattr(batch, 'edge_attr') else None
+                    )
+                    if global_emb.dim() == 2:
+                        pass  # already [B, cond_emb_dim]
+                    else:
+                        global_emb = global_emb.unsqueeze(0)  # [1, cond_emb_dim]
+                        if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
+                            global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
+
                 t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
                 loss = diffusion.p_losses(
                     x_start=batch.target_img,
                     t=t,
-                    graph_data=batch
+                    graph_data=batch,  # Still needed for compatibility, but model will ignore if cond_emb provided
+                    cond_emb=global_emb
                 )
                 ema_val_loss += loss.item()
                 ema_val_batches += 1
@@ -289,10 +354,23 @@ def main():
                 val_samples = val_samples.to(device)
                 # Limit to 4 samples
                 val_samples = val_samples[:4]
+                # Precompute graph embedding for validation samples
+                global_emb, _ = denoise_model.graph_encoder(
+                    val_samples.x,
+                    val_samples.edge_index,
+                    val_samples.edge_attr if hasattr(val_samples, 'edge_attr') else None
+                )
+                if global_emb.dim() == 2:
+                    pass  # already [B, cond_emb_dim]
+                else:
+                    global_emb = global_emb.unsqueeze(0)  # [1, cond_emb_dim]
+                    if global_emb.shape[0] == 1 and val_samples.target_img.shape[0] > 1:
+                        global_emb = global_emb.repeat(val_samples.target_img.shape[0], 1)
                 # Generate samples
                 sampled_images = diffusion.sample_with_guidance(
                     batch_size=val_samples.shape[0],
                     graph_data=val_samples,
+                    cond_emb=global_emb,
                     guidance_scale=cfg.GUIDANCE_STRENGTH if hasattr(cfg, 'GUIDANCE_STRENGTH') else 2.5
                 )
                 # Denormalize from [-1,1] to [0,1]
