@@ -28,7 +28,8 @@ from torch_geometric.loader import DataLoader
 
 import config as cfg
 from dataset import FloorPlanDataset
-from model import FloorPlanCVAE
+# from model import FloorPlanCVAE  # Commented out - diffusion model uses different architecture
+# For diffusion model evaluation, use sample generation in train.py or implement diffusion-specific evaluation
 
 
 # ── room colours (same palette as the original dataset) ────────────────
@@ -125,165 +126,15 @@ def precision_recall_f1(ious, threshold):
 # ── main ────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--n-samples", type=int, default=4,
-                        help="Number of side-by-side comparisons to show")
-    parser.add_argument("--split", type=str, default="test",
-                        choices=["test", "val", "train"],
-                        help="Which split to evaluate on (default: test)")
-    args = parser.parse_args()
+    print("Evaluation script for diffusion model is not yet implemented.")
+    print("To evaluate the diffusion model, you can:")
+    print("  1. Use the sample generation in train.py (it generates samples periodically)")
+    print("  2. Run python pipeline/infer.py to generate samples from a checkpoint")
+    print("  3. Implement diffusion-specific evaluation metrics (FID, precision/recall, etc.)")
+    print("")
+    print("For training, run: python pipeline/train.py")
 
-    device = torch.device(cfg.DEVICE if torch.cuda.is_available() else "cpu")
 
-    # ── load model ──────────────────────────────────────────────────────
-    model_path = os.path.join(cfg.CHECKPOINT_DIR, "best_model.pt")
-    if not os.path.exists(model_path):
-        print(f"ERROR: No trained model found at {model_path}")
-        print("Run  python train.py  first.")
-        return
-
-    model = FloorPlanCVAE().to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.eval()
-    print(f"Loaded model from {model_path}")
-    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Model parameters: {n_params:,}")
-
-    # ── load data ───────────────────────────────────────────────────────
-    print(f"Loading {args.split} split …")
-    eval_ds = FloorPlanDataset(split=args.split)
-    eval_loader = DataLoader(eval_ds, batch_size=1, shuffle=False)
-    print(f"{args.split.title()} plans: {len(eval_ds)}")
-
-    # ── quantitative metrics ────────────────────────────────────────────
-    # Generation metrics (z ~ N(0,I))
-    gen_mse_sum, gen_n = 0.0, 0
-    all_gen_ious = []
-    room_type_gen_ious = {rt: [] for rt in cfg.ROOM_TYPES}
-    overlap_rates = []
-
-    # Reconstruction metrics (z from posterior)
-    recon_mse_sum, recon_n = 0.0, 0
-    all_recon_ious = []
-    room_type_recon_ious = {rt: [] for rt in cfg.ROOM_TYPES}
-    all_mu, all_logvar = [], []
-
-    with torch.no_grad():
-        for data in eval_loader:
-            data = data.to(device)
-            real = data.y
-            feats = data.x
-
-            # ── generation path ─────────────────────────────────────────
-            pred_gen = model.generate(data)
-            gen_mse_sum += F.mse_loss(pred_gen, real).item()
-            gen_n += 1
-
-            pred_gen_np = pred_gen.cpu().numpy()
-            real_np = real.cpu().numpy()
-            feats_np = feats.cpu().numpy()
-
-            for p, r, f in zip(pred_gen_np, real_np, feats_np):
-                iou = compute_iou(p, r)
-                all_gen_ious.append(iou)
-                rtype = _room_type_name(f)
-                room_type_gen_ious[rtype].append(iou)
-
-            overlap_rates.append(compute_overlap_rate(pred_gen_np))
-
-            # ── reconstruction path ─────────────────────────────────────
-            pred_recon, mu, logvar = model(data)
-            recon_mse_sum += F.mse_loss(pred_recon, real).item()
-            recon_n += 1
-
-            pred_recon_np = pred_recon.cpu().numpy()
-            for p, r in zip(pred_recon_np, real_np):
-                all_recon_ious.append(compute_iou(p, r))
-
-            all_mu.append(mu.cpu())
-            all_logvar.append(logvar.cpu())
-
-    # ── aggregate stats ─────────────────────────────────────────────────
-    all_mu_cat = torch.cat(all_mu, dim=0).numpy()
-    all_logvar_cat = torch.cat(all_logvar, dim=0).numpy()
-    all_sigma = np.exp(0.5 * all_logvar_cat)
-
-    # ── print results ───────────────────────────────────────────────────
-    sep = "═" * 60
-    print(f"\n{sep}")
-    print(f"  EVALUATION RESULTS — {args.split.upper()} SET")
-    print(f"  {gen_n} plans, {len(all_gen_ious)} rooms")
-    print(f"{sep}")
-
-    print(f"\n┌─ Reconstruction (z from posterior) ────────────────────────")
-    print(f"│  MSE      : {recon_mse_sum / max(recon_n, 1):.6f}")
-    print(f"│  IoU mean : {np.mean(all_recon_ious):.4f}")
-    print(f"│  IoU med  : {np.median(all_recon_ious):.4f}")
-
-    print(f"\n┌─ Generation (z ~ N(0,I)) ────────────────────────────────")
-    print(f"│  MSE      : {gen_mse_sum / max(gen_n, 1):.6f}")
-    print(f"│  IoU mean : {np.mean(all_gen_ious):.4f}")
-    print(f"│  IoU med  : {np.median(all_gen_ious):.4f}")
-
-    print(f"\n┌─ Precision / Recall / F1 (Generation) ────────────────────")
-    for t in cfg.IOU_THRESHOLDS:
-        p, r, f1 = precision_recall_f1(all_gen_ious, t)
-        print(f"│  @{t:.2f}  Prec={p:.4f}  Rec={r:.4f}  F1={f1:.4f}")
-
-    print(f"\n┌─ Room Overlap ────────────────────────────────────────────")
-    print(f"│  Mean overlap rate: {np.mean(overlap_rates) * 100:.1f}%")
-    print(f"│  Max  overlap rate: {np.max(overlap_rates) * 100:.1f}%")
-
-    print(f"\n┌─ Per-Room-Type IoU (Generation) ──────────────────────────")
-    for rt in cfg.ROOM_TYPES:
-        ious = room_type_gen_ious[rt]
-        if ious:
-            print(f"│  {rt:12s}  mean={np.mean(ious):.4f}  "
-                  f"med={np.median(ious):.4f}  n={len(ious)}")
-
-    print(f"\n┌─ Posterior Statistics ─────────────────────────────────────")
-    print(f"│  μ  mean={all_mu_cat.mean():.4f}  "
-          f"|μ| mean={np.mean(np.abs(all_mu_cat)):.4f}  "
-          f"std={all_mu_cat.std():.4f}")
-    print(f"│  σ  mean={all_sigma.mean():.4f}  "
-          f"std={all_sigma.std():.4f}  "
-          f"min={all_sigma.min():.4f}  max={all_sigma.max():.4f}")
-    print(f"│  (ideal: |μ|→0, σ→1)")
-    print(f"└{'─' * 59}")
-
-    # ── visual comparisons ──────────────────────────────────────────────
-    n = min(args.n_samples, len(eval_ds))
-    fig, axes = plt.subplots(2, n, figsize=(5 * n, 10))
-    if n == 1:
-        axes = axes.reshape(2, 1)
-
-    for i in range(n):
-        data = eval_ds[i].to(device)
-        feats = data.x.cpu().numpy()
-
-        # real
-        draw_layout(data.y.cpu().numpy(), feats,
-                    title=f"Real  (plan {data.plan_id})", ax=axes[0, i])
-
-        # generated
-        with torch.no_grad():
-            pred = model.generate(data)
-        pred_np = pred.cpu().numpy()
-        real_np = data.y.cpu().numpy()
-
-        # compute IoU for this sample
-        sample_ious = [compute_iou(p, r)
-                       for p, r in zip(pred_np, real_np)]
-        mean_iou = np.mean(sample_ious)
-        draw_layout(pred_np, feats,
-                    title=f"Generated  (plan {data.plan_id}, IoU={mean_iou:.3f})",
-                    ax=axes[1, i])
-
-    plt.tight_layout()
-    out_path = os.path.join(cfg.CHECKPOINT_DIR, "sample_outputs.png")
-    plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"\nSaved visual comparison → {out_path}")
-    plt.close()
 
 
 if __name__ == "__main__":

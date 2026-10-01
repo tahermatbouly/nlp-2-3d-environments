@@ -326,7 +326,7 @@ def main():
                 batch = batch.to(device)
                 # Precompute graph embedding once per batch
                 with torch.no_grad():
-                    global_emb, _ = denoise_model.graph_encoder(
+                    global_emb, _ = graph_encoder(
                         batch.x,
                         batch.edge_index,
                         batch.edge_attr if hasattr(batch, 'edge_attr') else None
