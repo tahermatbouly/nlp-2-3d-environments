@@ -33,7 +33,7 @@ NODE_FEATURE_DIM = NUM_ROOM_TYPES + 1   # 9
 # GNN hidden dimension for encoding the constraint graph
 GNN_HIDDEN_DIM = 256                    # Increased capacity for graph encoding
 # Diffusion model channels (base width)
-BASE_CHANNELS = 128
+BASE_CHANNELS = 96
 # Number of diffusion timesteps
 TIMESTEPS = 1000
 # Image size for generated floorplans
@@ -49,7 +49,7 @@ DROPOUT = 0.1
 
 
 # ── Training ───────────────────────────────────────────────────────────
-BATCH_SIZE = 16                     # Reduced for larger model and image resolution
+BATCH_SIZE = 4                     # Reduced for larger model and image resolution
 LEARNING_RATE = 2e-4                # Adjusted for diffusion training
 LR_MIN = 1e-6                       # Minimum learning rate for cosine annealing
 EPOCHS = 1000                       # More epochs may be needed
@@ -82,3 +82,5 @@ NUM_SAMPLES_TO_GENERATE = 4         # How many samples to generate during evalua
 # We'll use simple L2 loss on the noise prediction, so no additional weights needed.
 # If we want to weight different parts of the image, we can add here.
 LOSS_TYPE = "l2"                    # Options: l2, l1, huber
+# Gradient accumulation steps (set >1 to simulate larger batch size)
+# GRADIENT_ACCUMULATION_STEPS = 4
