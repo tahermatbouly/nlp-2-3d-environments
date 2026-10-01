@@ -307,8 +307,8 @@ class UNet(nn.Module):
 def extract(a, t, x_shape):
     """Extract coefficients from a based on timestep t and reshape to match image shape."""
     batch_size = t.shape[0]
-    out = a.gather(-1, t.cpu())
-    return out.reshape(batch_size, *((1,) * (len(x_shape) - 1))).to(t.device)
+    out = a.gather(-1, t)
+    return out.reshape(batch_size, *((1,) * (len(x_shape) - 1)))
 
 
 def linear_beta_schedule(timesteps, beta_start, beta_end):
