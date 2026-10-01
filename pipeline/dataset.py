@@ -19,7 +19,7 @@ import torch
 from torch_geometric.data import Dataset, Data
 
 import config as cfg
-from resplan_utils import geometry_to_mask, CATEGORY_COLORS, normalize_keys
+from ..resplan_utils import geometry_to_mask, CATEGORY_COLORS, normalize_keys
 
 
 # Define segmentation categories (must match the keys we rasterize)
