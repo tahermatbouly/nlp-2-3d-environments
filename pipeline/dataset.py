@@ -12,7 +12,7 @@ For each floor plan it builds:
 
 import pickle
 import json
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import sys
 import os
 
@@ -50,7 +50,9 @@ NUM_SEGMENTATION_CLASSES = len(SEGMENTATION_CATEGORIES)
 
 
 class FloorPlanDataset(Dataset):
-    """PyTorch Geometric dataset that wraps one split of ResPlan."""
+    """PyTorch Geometric dataset that wraps one split of ResPlan.
+    Uses lazy loading with caching to avoid upfront processing of all plans.
+    """
 
     def __init__(self, split: str = "train", plans: Optional[list] = None):
         """
@@ -67,125 +69,125 @@ class FloorPlanDataset(Dataset):
         # ── load raw plans ──────────────────────────────────────────────
         if plans is None:
             with open(cfg.DATA_PKL, "rb") as f:
-                plans = pickle.load(f)
+                all_plans = pickle.load(f)
+        else:
+            all_plans = plans
 
         with open(cfg.SPLIT_JSON) as f:
             splits = json.load(f)
 
         split_ids = set(splits[split])
-        self.plans = [p for p in plans if p["id"] in split_ids]
+        # Filter plans by split
+        split_plans = [p for p in all_plans if p["id"] in split_ids]
 
-        # ── convert every plan to a PyG Data object ─────────────────────
-        self.data_list: List[Data] = []
+        # Preprocess each plan to extract lightweight info and validate
+        self.plans_data: List[Tuple] = []  # each entry: (plan_dict, plan_bounds, max_area, node_features, edge_index, edge_attr)
         skipped = 0
-        for plan in self.plans:
-            data = self._process_plan(plan)
-            if data is not None:
-                self.data_list.append(data)
-            else:
+        for plan in split_plans:
+            plan = normalize_keys(plan)
+            graph = plan.get("graph")
+            if graph is None or len(graph.nodes) == 0:
                 skipped += 1
+                continue
+
+            # Build node mapping
+            nodes = list(graph.nodes(data=True))
+            node_to_idx = {name: i for i, (name, _) in enumerate(nodes)}
+
+            # ── collect bounds of every room for normalisation ──────────────
+            all_bounds = []
+            for _, d in nodes:
+                geom = d["geometry"]
+                if hasattr(geom, "bounds") and not geom.is_empty:
+                    all_bounds.append(geom.bounds)   # (minx, miny, maxx, maxy)
+
+            if not all_bounds:
+                skipped += 1
+                continue
+
+            bounds_arr = np.array(all_bounds)
+            plan_minx = bounds_arr[:, 0].min()
+            plan_miny = bounds_arr[:, 1].min()
+            plan_maxx = bounds_arr[:, 2].max()
+            plan_maxy = bounds_arr[:, 3].max()
+            plan_scale = max(plan_maxx - plan_minx, plan_maxy - plan_miny, 1.0)
+            plan_bounds = (plan_minx, plan_miny, plan_scale)
+
+            # ── node features and edges ───────────────────────────────────
+            max_area = max(d["area"] for _, d in nodes) or 1.0
+
+            node_features = []
+            for _, d in nodes:
+                # one-hot room type (8 dims)
+                rtype = d["type"]
+                type_idx = (cfg.ROOM_TYPES.index(rtype)
+                            if rtype in cfg.ROOM_TYPES else 0)
+                onehot = [0.0] * cfg.NUM_ROOM_TYPES
+                onehot[type_idx] = 1.0
+
+                # normalised area (1 dim)
+                area_norm = d["area"] / max_area
+                node_features.append(onehot + [area_norm])
+
+            # ── edges (both directions for the undirected graph) ────────────
+            src_list, dst_list, edge_attrs = [], [], []
+
+            for u, v, d in graph.edges(data=True):
+                if u not in node_to_idx or v not in node_to_idx:
+                    continue
+
+                etype = d.get("type", "adjacency")
+                if etype in cfg.EDGE_TYPES:
+                    etype_idx = cfg.EDGE_TYPES.index(etype)
+                else:
+                    # unknown edge type (e.g. "fallback", "via_opening") → adjacency
+                    etype_idx = cfg.EDGE_TYPES.index("adjacency")
+
+                onehot_e = [0.0] * cfg.NUM_EDGE_TYPES
+                onehot_e[etype_idx] = 1.0
+
+                ui, vi = node_to_idx[u], node_to_idx[v]
+                src_list.extend([ui, vi])
+                dst_list.extend([vi, ui])
+                edge_attrs.extend([onehot_e, onehot_e])
+
+            # ── assemble edge tensors ───────────────────────────────────────
+            if not edge_attrs:
+                edge_index = torch.zeros((2, 0), dtype=torch.long)
+                edge_attr = torch.zeros((0, cfg.NUM_EDGE_TYPES), dtype=torch.float)
+            else:
+                edge_index = torch.tensor([src_list, dst_list], dtype=torch.long)
+                edge_attr = torch.tensor(edge_attrs, dtype=torch.float)
+
+            # Store precomputed data along with the plan dict for rasterization later
+            self.plans_data.append((
+                plan,                     # we need the plan dict for rasterization
+                plan_bounds,
+                max_area,
+                torch.tensor(node_features, dtype=torch.float),
+                edge_index,
+                edge_attr
+            ))
 
         if skipped:
             print(f"[dataset] Skipped {skipped} plans with no valid geometry.")
 
+        # Cache for loaded data objects (to avoid reprocessing the same index multiple times)
+        self._cache: dict = {}
+
     # ── PyG interface ───────────────────────────────────────────────────
     def len(self) -> int:
-        return len(self.data_list)
+        return len(self.plans_data)
 
     def get(self, idx: int) -> Data:
-        return self.data_list[idx]
+        # Check cache first
+        if idx in self._cache:
+            return self._cache[idx]
 
-    # ── Per-plan processing ─────────────────────────────────────────────
-    def _process_plan(self, plan: dict) -> Optional[Data]:
-        plan = normalize_keys(plan)
-        graph = plan["graph"]
-        nodes = list(graph.nodes(data=True))
+        # Retrieve precomputed data
+        plan_dict, plan_bounds, max_area, node_features, edge_index, edge_attr = self.plans_data[idx]
 
-        if len(nodes) == 0:
-            return None
-
-        # Build  node-name → integer index  mapping
-        node_to_idx = {name: i for i, (name, _) in enumerate(nodes)}
-
-        # ── collect bounds of every room for normalisation ──────────────
-        all_bounds = []
-        for _, d in nodes:
-            geom = d["geometry"]
-            if hasattr(geom, "bounds") and not geom.is_empty:
-                all_bounds.append(geom.bounds)   # (minx, miny, maxx, maxy)
-
-        if not all_bounds:
-            return None
-
-        bounds_arr = np.array(all_bounds)
-        plan_minx = bounds_arr[:, 0].min()
-        plan_miny = bounds_arr[:, 1].min()
-        plan_maxx = bounds_arr[:, 2].max()
-        plan_maxy = bounds_arr[:, 3].max()
-        plan_scale = max(plan_maxx - plan_minx, plan_maxy - plan_miny, 1.0)
-
-        # ── node features (same as before) ───────────────────────────────
-        max_area = max(d["area"] for _, d in nodes) or 1.0
-
-        node_features = []
-        for _, d in nodes:
-            # one-hot room type (8 dims)
-            rtype = d["type"]
-            type_idx = (cfg.ROOM_TYPES.index(rtype)
-                        if rtype in cfg.ROOM_TYPES else 0)
-            onehot = [0.0] * cfg.NUM_ROOM_TYPES
-            onehot[type_idx] = 1.0
-
-            # normalised area (1 dim)
-            area_norm = d["area"] / max_area
-
-            node_features.append(onehot + [area_norm])
-
-        # ── edges (both directions for the undirected graph) ────────────
-        src_list, dst_list, edge_attrs = [], [], []
-
-        for u, v, d in graph.edges(data=True):
-            if u not in node_to_idx or v not in node_to_idx:
-                continue
-
-            etype = d.get("type", "adjacency")
-            if etype in cfg.EDGE_TYPES:
-                etype_idx = cfg.EDGE_TYPES.index(etype)
-            else:
-                # unknown edge type (e.g. "fallback", "via_opening") → adjacency
-                etype_idx = cfg.EDGE_TYPES.index("adjacency")
-
-            onehot_e = [0.0] * cfg.NUM_EDGE_TYPES
-            onehot_e[etype_idx] = 1.0
-
-            ui, vi = node_to_idx[u], node_to_idx[v]
-            src_list.extend([ui, vi])
-            dst_list.extend([vi, ui])
-            edge_attrs.extend([onehot_e, onehot_e])
-
-        # ── assemble edge tensors ───────────────────────────────────────
-        if not edge_attrs:
-            edge_index = torch.zeros((2, 0), dtype=torch.long)
-            edge_attr = torch.zeros((0, cfg.NUM_EDGE_TYPES), dtype=torch.float)
-        else:
-            edge_index = torch.tensor([src_list, dst_list], dtype=torch.long)
-            edge_attr = torch.tensor(edge_attrs, dtype=torch.float)
-
-        # ── rasterize the plan to a segmentation mask ───────────────────
-        # We'll create a multi-channel mask where each channel is a binary mask for a category.
-        # Alternatively, we could create a single-channel mask with category indices.
-        # We'll use single-channel with category indices for simplicity (cross-entropy loss).
-        # But note: diffusion models often predict noise in the same space as the input.
-        # We'll treat the segmentation mask as a tensor of long integers (class indices).
-        # However, adding noise to class indices doesn't make sense.
-        # Therefore, we might need to predict the continuous mask (probabilities) or use a different approach.
-        # Alternatively, we can generate an RGB image and predict noise in RGB space.
-        # Let's change strategy: generate an RGB image where each category has a fixed color.
-        # We can then treat the image as a continuous tensor [3, H, W] and predict noise.
-        # We'll use the CATEGORY_COLORS to map each category to an RGB color.
-        # We'll create an RGB image by filling each pixel with the color of the topmost category.
-        # We'll define a drawing order (background to foreground) to handle overlaps.
-
+        # Rasterize the plan to get target_image
         # Drawing order (background first): land, garden, parking, pool, wall, then rooms, then doors/windows, etc.
         # We'll follow the order from visualize_floorplan.py's render_architectural_plan.
         draw_order = [
@@ -201,7 +203,7 @@ class FloorPlanDataset(Dataset):
 
         # Rasterize each category onto the canvas
         for category in draw_order:
-            geom = plan.get(category)
+            geom = plan_dict.get(category)
             if geom is None:
                 continue
             # Convert geometry to mask (binary)
@@ -216,20 +218,22 @@ class FloorPlanDataset(Dataset):
                 canvas[:, :, c] = np.where(mask == 255, color_rgb[c], canvas[:, :, c])
 
         # Convert canvas to torch tensor [3, H, W] and normalize to [-1, 1] for diffusion
-        # Diffusion models often work with inputs in [-1, 1].
         target_image = torch.from_numpy(canvas).permute(2, 0, 1)  # [3, H, W]
         target_image = target_image * 2.0 - 1.0  # [0,1] -> [-1,1]
 
         # ── assemble PyG Data object ─────────────────────────────────────
         data = Data(
-            x=torch.tensor(node_features, dtype=torch.float),
+            x=node_features,
             edge_index=edge_index,
             edge_attr=edge_attr,
             target_image=target_image,
-            plan_id=plan["id"],
+            plan_id=plan_dict.get("id", -1),
             plan_bounds=torch.tensor(
                 [plan_minx, plan_miny, plan_scale], dtype=torch.float
             ),
         )
+
+        # Cache the data object to avoid reprocessing
+        self._cache[idx] = data
 
         return data
