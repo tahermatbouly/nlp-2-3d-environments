@@ -54,36 +54,46 @@ def box_overlap_loss(pred_boxes, eps=1e-6):
     x2 = pred_boxes[:, 0] + pred_boxes[:, 2] / 2  # cx + w/2
     y2 = pred_boxes[:, 1] + pred_boxes[:, 3] / 2  # cy + h/2
 
-    # Compute pairwise overlaps
-    overlap_loss = 0.0
-    pair_count = 0
+    # Vectorized pairwise overlap computation
+    # Expand dimensions for broadcasting: (N,1,4) and (1,N,4) -> (N,N,4)
+    x1_exp = x1.unsqueeze(1)
+    y1_exp = y1.unsqueeze(1)
+    x2_exp = x2.unsqueeze(1)
+    y2_exp = y2.unsqueeze(1)
 
-    for i in range(len(pred_boxes)):
-        for j in range(i + 1, len(pred_boxes)):
-            # Intersection dimensions
-            ix1 = torch.max(x1[i], x1[j])
-            iy1 = torch.max(y1[i], y1[j])
-            ix2 = torch.min(x2[i], x2[j])
-            iy2 = torch.min(y2[i], y2[j])
+    x1_exp2 = x1.unsqueeze(0)
+    y1_exp2 = y1.unsqueeze(0)
+    x2_exp2 = x2.unsqueeze(0)
+    y2_exp2 = y2.unsqueeze(0)
 
-            # Intersection area (clamped to avoid negatives)
-            iw = torch.clamp(ix2 - ix1, min=0.0)
-            ih = torch.clamp(iy2 - iy1, min=0.0)
-            intersection = iw * ih
+    # Intersection dimensions
+    ix1 = torch.maximum(x1_exp, x1_exp2)
+    iy1 = torch.maximum(y1_exp, y1_exp2)
+    ix2 = torch.minimum(x2_exp, x2_exp2)
+    iy2 = torch.minimum(y2_exp, y2_exp2)
 
-            # Union area
-            area_i = (x2[i] - x1[i]) * (y2[i] - y1[i])
-            area_j = (x2[j] - x1[j]) * (y2[j] - y1[j])
-            union = area_i + area_j - intersection + eps  # eps for numerical stability
+    # Intersection area (clamped to avoid negatives)
+    iw = torch.clamp(ix2 - ix1, min=0.0)
+    ih = torch.clamp(iy2 - iy1, min=0.0)
+    intersection = iw * ih
 
-            # IoU (Intersection over Union)
-            iou = intersection / union
+    # Union area
+    area_i = (x2_exp - x1_exp) * (y2_exp - y1_exp)
+    area_j = (x2_exp2 - x1_exp2) * (y2_exp2 - y1_exp2)
+    union = area_i + area_j - intersection + eps  # eps for numerical stability
 
-            # Add to loss (we want to minimize overlap, so penalize high IoU)
-            overlap_loss += iou
-            pair_count += 1
+    # IoU (Intersection over Union)
+    iou = intersection / union
 
-    return overlap_loss / max(pair_count, 1)
+    # Mask to exclude self-pairs and duplicate pairs (i >= j)
+    # Keep only where i < j (upper triangle excluding diagonal)
+    mask = torch.triu(torch.ones(len(pred_boxes), len(pred_boxes), device=pred_boxes.device, dtype=torch.bool), diagonal=1)
+
+    # Apply mask and compute mean
+    iou_masked = iou * mask.float()
+    overlap_loss = iou_masked.sum() / max(mask.sum().item(), 1)
+
+    return overlap_loss
 
 
 # ── KL annealing ────────────────────────────────────────────────────────
