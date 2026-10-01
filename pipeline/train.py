@@ -12,9 +12,13 @@ Features
 """
 
 import os
+import sys
 import time
 import math
 from datetime import timedelta
+
+# Add the project root to sys.path so we can import the pipeline package
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import numpy as np
 import torch
@@ -24,9 +28,9 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torch_geometric.loader import DataLoader
 from torch.utils.tensorboard import SummaryWriter  # Optional, but we can use simple logging
 
-import config as cfg
-from dataset import FloorPlanDataset
-from model import UNet, GaussianDiffusion
+from pipeline import config as cfg
+from pipeline.dataset import FloorPlanDataset
+from pipeline.model import UNet, GaussianDiffusion
 
 # Optional: for EMA
 class EMA:
@@ -87,8 +91,8 @@ def main():
     print(f"Train : {len(train_ds)} plans")
     print(f"Val   : {len(val_ds)} plans")
 
-    train_loader = DataLoader(train_ds, batch_size=cfg.BATCH_SIZE, shuffle=True, num_workers=4, pin_memory=True)
-    val_loader   = DataLoader(val_ds,   batch_size=cfg.BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
+    train_loader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=4, pin_memory=True)
+    val_loader   = DataLoader(val_ds,   batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
 
     # ── Initialize model and diffusion ─────────────────────────────────────
     print("Initializing model...")
@@ -122,14 +126,17 @@ def main():
     total_steps = len(train_loader) * cfg.EPOCHS
     warmup_steps = len(train_loader) * cfg.LR_WARMUP_EPOCHS if hasattr(cfg, 'LR_WARMUP_EPOCHS') else 0
 
-    scheduler = SequentialLR(
-        optimizer,
-        schedulers=[
-            LinearLR(optimizer, start_factor=0.01, total_iters=max(warmup_steps, 1)),
-            CosineAnnealingLR(optimizer, T_max=max(total_steps - warmup_steps, 1), eta_min=cfg.LR_MIN)
-        ],
-        milestones=[max(warmup_steps, 1)] if warmup_steps > 0 else []
-    )
+    if warmup_steps > 0:
+        scheduler = SequentialLR(
+            optimizer,
+            schedulers=[
+                LinearLR(optimizer, start_factor=0.01, total_iters=max(warmup_steps, 1)),
+                CosineAnnealingLR(optimizer, T_max=max(total_steps - warmup_steps, 1), eta_min=cfg.LR_MIN)
+            ],
+            milestones=[max(warmup_steps, 1)]
+        )
+    else:
+        scheduler = CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=cfg.LR_MIN)
 
     # Logging setup
     os.makedirs(cfg.CHECKPOINT_DIR, exist_ok=True)
@@ -162,18 +169,40 @@ def main():
         denoise_model.train()
         epoch_loss = 0.0
         num_batches = 0
+        _printed_batch_shape = False
 
         # ── Training ───────────────────────────────────────────────────────
+        print("About to iterate over train_loader", flush=True)
         for batch in train_loader:
+            print("!!! Entering loop body !!!", flush=True)
+            print(f"Batch type: {type(batch)}", flush=True)
+            if hasattr(batch, 'num_graphs'):
+                print(f"Batch num_graphs: {batch.num_graphs}", flush=True)
             batch = batch.to(device)
+            # Print batch info for first 2 batches
+            if hasattr(batch, 'target_img'):
+                print(f"Batch target_img shape: {batch.target_img.shape}", flush=True)
+                print(f"Batch target_img type: {type(batch.target_img)}", flush=True)
+                # Try to see if we can index the first dimension
+                if batch.target_img.dim() >= 1:
+                    print(f"Batch target_img[0] shape: {batch.target_img[0].shape}", flush=True)
+            print(f"DEBUG: _printed_batch_shape = {_printed_batch_shape}", flush=True)
+            if not _printed_batch_shape:
+                print("!!! About to print batch target image info !!!", flush=True)
+                try:
+                    print(f"batch.target_img type: {type(batch.target_img)}", flush=True)
+                    print(f"batch.target_img shape: {batch.target_img.shape}", flush=True)
+                except Exception as e:
+                    print(f"Error while printing batch.target_img: {e}", flush=True)
+                _printed_batch_shape = True
             optimizer.zero_grad()
 
             # Sample random timesteps for each image in the batch
-            t = torch.randint(0, diffusion.timesteps, (batch.target_image.shape[0],), device=device).long()
+            t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
 
             # Compute loss
             loss = diffusion.p_losses(
-                x_start=batch.target_image,
+                x_start=batch.target_img,
                 t=t,
                 graph_data=batch
             )
@@ -201,9 +230,9 @@ def main():
             val_batches = 0
             for batch in val_loader:
                 batch = batch.to(device)
-                t = torch.randint(0, diffusion.timesteps, (batch.target_image.shape[0],), device=device).long()
+                t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
                 loss = diffusion.p_losses(
-                    x_start=batch.target_image,
+                    x_start=batch.target_img,
                     t=t,
                     graph_data=batch
                 )
@@ -218,9 +247,9 @@ def main():
             ema_val_batches = 0
             for batch in val_loader:
                 batch = batch.to(device)
-                t = torch.randint(0, diffusion.timesteps, (batch.target_image.shape[0],), device=device).long()
+                t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
                 loss = diffusion.p_losses(
-                    x_start=batch.target_image,
+                    x_start=batch.target_img,
                     t=t,
                     graph_data=batch
                 )

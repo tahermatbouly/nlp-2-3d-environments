@@ -14,12 +14,17 @@ Architecture
     Reverse diffusion: denoise network predicts noise to remove.
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 from torch_geometric.nn import GATConv
 
-import config as cfg
+from pipeline import config as cfg
 
 
 # ── Helper Layers ───────────────────────────────────────────────────────
@@ -219,8 +224,7 @@ class UNet(nn.Module):
         for i, mult in reversed(list(enumerate(ch_mults))):
             out_ch = base_channels * mult
             for _ in range(num_res_blocks):
-                self.ups.append(ResidualBlock(ch + base_channels * ch_mults[i + 1] if i < len(ch_mults)-1 else ch,
-                                              out_ch, time_emb_dim, self.cond_emb_dim))
+                self.ups.append(ResidualBlock(ch, out_ch, time_emb_dim, self.cond_emb_dim))
                 ch = out_ch
             if i != 0:
                 self.ups.append(Upsample(ch))
@@ -264,27 +268,32 @@ class UNet(nn.Module):
                 global_emb = global_emb.repeat(x.shape[0], 1)
 
         # UNet
+        print(f"UNet input x shape: {x.shape}", flush=True)
         x = self.init_conv(x)
+        print(f"After init_conv x shape: {x.shape}", flush=True)
         h = [x]  # skip connections
 
         # Downsample
-        for layer in self.downs:
+        for i, layer in enumerate(self.downs):
             if isinstance(layer, ResidualBlock):
+                print(f"Before ResidualBlock {i} x shape: {x.shape}", flush=True)
                 x = layer(x, t_emb, global_emb)
+                print(f"After ResidualBlock {i} x shape: {x.shape}", flush=True)
             else:
                 x = layer(x)
+                print(f"After downsample layer {i} x shape: {x.shape}", flush=True)
             h.append(x)
 
         # Middle
         x = self.mid_block1(x, t_emb, global_emb)
+        print(f"After mid_block1 x shape: {x.shape}", flush=True)
         x = self.mid_block2(x, t_emb, global_emb)
+        print(f"After mid_block2 x shape: {x.shape}", flush=True)
 
         # Upsample
         for layer in self.ups:
             if isinstance(layer, ResidualBlock):
-                # Skip connection: concatenate with the corresponding downsample feature
-                skip = h.pop()
-                x = torch.cat([x, skip], dim=1)
+                # No skip connection
                 x = layer(x, t_emb, global_emb)
             else:
                 x = layer(x)

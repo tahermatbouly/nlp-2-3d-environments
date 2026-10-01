@@ -10,21 +10,19 @@ For each floor plan it builds:
     plan_bounds   (3,)     (min_x, min_y, scale) for denormalising back to pixel coords
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 import pickle
 import json
 from typing import List, Optional, Tuple
-import sys
-import os
 
 import numpy as np
 import torch
 from torch_geometric.data import Dataset, Data
 
-import config as cfg
-
-# Add the parent directory of this file (i.e., the root of the project) to sys.path
-# so that we can import resplan_utils which is located in the root.
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from pipeline import config as cfg
 from resplan_utils import geometry_to_mask, CATEGORY_COLORS, normalize_keys
 
 
@@ -180,6 +178,7 @@ class FloorPlanDataset(Dataset):
         return len(self.plans_data)
 
     def get(self, idx: int) -> Data:
+        print(f"Getting item {idx}")
         # Check cache first
         if idx in self._cache:
             return self._cache[idx]
@@ -220,17 +219,23 @@ class FloorPlanDataset(Dataset):
         # Convert canvas to torch tensor [3, H, W] and normalize to [-1, 1] for diffusion
         target_image = torch.from_numpy(canvas).permute(2, 0, 1)  # [3, H, W]
         target_image = target_image * 2.0 - 1.0  # [0,1] -> [-1,1]
+        # Add batch dimension for proper batching: [1, 3, H, W]
+        target_image = target_image.unsqueeze(0)
+        print(f"Target image shape: {target_image.shape}, type: {type(target_image)}", flush=True)
+        if hasattr(target_image, '__getitem__'):
+            try:
+                print(f"Target image[0] shape: {target_image[0].shape}", flush=True)
+            except Exception as e:
+                print(f"Error accessing target_image[0]: {e}", flush=True)
 
         # ── assemble PyG Data object ─────────────────────────────────────
         data = Data(
             x=node_features,
             edge_index=edge_index,
             edge_attr=edge_attr,
-            target_image=target_image,
+            target_img=target_image,
             plan_id=plan_dict.get("id", -1),
-            plan_bounds=torch.tensor(
-                [plan_minx, plan_miny, plan_scale], dtype=torch.float
-            ),
+            plan_bounds=torch.tensor(plan_bounds, dtype=torch.float),
         )
 
         # Cache the data object to avoid reprocessing

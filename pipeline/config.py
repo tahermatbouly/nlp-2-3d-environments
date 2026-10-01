@@ -51,6 +51,7 @@ DROPOUT = 0.1
 # ── Training ───────────────────────────────────────────────────────────
 BATCH_SIZE = 16                     # Reduced for larger model and image resolution
 LEARNING_RATE = 2e-4                # Adjusted for diffusion training
+LR_MIN = 1e-6                       # Minimum learning rate for cosine annealing
 EPOCHS = 1000                       # More epochs may be needed
 DEVICE = "cuda"                     # "cuda" or "cpu"
 
