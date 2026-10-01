@@ -239,9 +239,12 @@ class UNet(nn.Module):
 
         # Use precomputed conditioning embedding
         global_emb = cond_emb
-        # Ensure correct shape for broadcasting
+        # Ensure correct shape for broadcasting to batch size
         if global_emb.dim() == 2:
-            pass  # already [B, cond_emb_dim]
+            # If [*, cond_emb_dim], check if we need to repeat for batch size
+            if global_emb.shape[0] == 1 and x.shape[0] > 1:
+                global_emb = global_emb.repeat(x.shape[0], 1)
+            # Else assume it's already [B, cond_emb_dim] or compatible
         else:
             global_emb = global_emb.unsqueeze(0)  # [1, cond_emb_dim]
             if global_emb.shape[0] == 1 and x.shape[0] > 1:
