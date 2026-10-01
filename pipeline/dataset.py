@@ -13,13 +13,19 @@ For each floor plan it builds:
 import pickle
 import json
 from typing import List, Optional
+import sys
+import os
 
 import numpy as np
 import torch
 from torch_geometric.data import Dataset, Data
 
 import config as cfg
-from ..resplan_utils import geometry_to_mask, CATEGORY_COLORS, normalize_keys
+
+# Add the parent directory of this file (i.e., the root of the project) to sys.path
+# so that we can import resplan_utils which is located in the root.
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from resplan_utils import geometry_to_mask, CATEGORY_COLORS, normalize_keys
 
 
 # Define segmentation categories (must match the keys we rasterize)
