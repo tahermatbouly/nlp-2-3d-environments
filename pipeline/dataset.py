@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pickle
 import json
 from typing import List, Optional, Tuple
+from collections import OrderedDict
 
 import numpy as np
 import torch
@@ -171,16 +172,19 @@ class FloorPlanDataset(Dataset):
             print(f"[dataset] Skipped {skipped} plans with no valid geometry.")
 
         # Cache for loaded data objects (to avoid reprocessing the same index multiple times)
-        self._cache: dict = {}
+        # Using LRU cache with maximum size to prevent memory issues
+        self._cache_max_size = 50  # Cache up to 50 items
+        self._cache = OrderedDict()
 
     # ── PyG interface ───────────────────────────────────────────────────
     def len(self) -> int:
         return len(self.plans_data)
 
     def get(self, idx: int) -> Data:
-        print(f"Getting item {idx}")
         # Check cache first
         if idx in self._cache:
+            # Move to end to mark as recently used
+            self._cache.move_to_end(idx)
             return self._cache[idx]
 
         # Retrieve precomputed data
@@ -221,12 +225,6 @@ class FloorPlanDataset(Dataset):
         target_image = target_image * 2.0 - 1.0  # [0,1] -> [-1,1]
         # Add batch dimension for proper batching: [1, 3, H, W]
         target_image = target_image.unsqueeze(0)
-        print(f"Target image shape: {target_image.shape}, type: {type(target_image)}", flush=True)
-        if hasattr(target_image, '__getitem__'):
-            try:
-                print(f"Target image[0] shape: {target_image[0].shape}", flush=True)
-            except Exception as e:
-                print(f"Error accessing target_image[0]: {e}", flush=True)
 
         # ── assemble PyG Data object ─────────────────────────────────────
         data = Data(
@@ -240,5 +238,8 @@ class FloorPlanDataset(Dataset):
 
         # Cache the data object to avoid reprocessing
         self._cache[idx] = data
+        # Remove oldest item if cache exceeds maximum size
+        if len(self._cache) > self._cache_max_size:
+            self._cache.popitem(last=False)
 
         return data

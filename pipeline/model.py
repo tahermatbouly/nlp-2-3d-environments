@@ -268,27 +268,20 @@ class UNet(nn.Module):
                 global_emb = global_emb.repeat(x.shape[0], 1)
 
         # UNet
-        print(f"UNet input x shape: {x.shape}", flush=True)
         x = self.init_conv(x)
-        print(f"After init_conv x shape: {x.shape}", flush=True)
         h = [x]  # skip connections
 
         # Downsample
         for i, layer in enumerate(self.downs):
             if isinstance(layer, ResidualBlock):
-                print(f"Before ResidualBlock {i} x shape: {x.shape}", flush=True)
                 x = layer(x, t_emb, global_emb)
-                print(f"After ResidualBlock {i} x shape: {x.shape}", flush=True)
             else:
                 x = layer(x)
-                print(f"After downsample layer {i} x shape: {x.shape}", flush=True)
             h.append(x)
 
         # Middle
         x = self.mid_block1(x, t_emb, global_emb)
-        print(f"After mid_block1 x shape: {x.shape}", flush=True)
         x = self.mid_block2(x, t_emb, global_emb)
-        print(f"After mid_block2 x shape: {x.shape}", flush=True)
 
         # Upsample
         for layer in self.ups:

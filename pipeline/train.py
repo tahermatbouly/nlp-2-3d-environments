@@ -32,6 +32,10 @@ from pipeline import config as cfg
 from pipeline.dataset import FloorPlanDataset
 from pipeline.model import UNet, GaussianDiffusion
 
+from tqdm import tqdm
+from rich.console import Console
+from rich.table import Table
+
 # Optional: for EMA
 class EMA:
     def __init__(self, model, decay=0.9999, start_step=1000, update_every=10):
@@ -91,8 +95,8 @@ def main():
     print(f"Train : {len(train_ds)} plans")
     print(f"Val   : {len(val_ds)} plans")
 
-    train_loader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=4, pin_memory=True)
-    val_loader   = DataLoader(val_ds,   batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
+    train_loader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=2, pin_memory=False)
+    val_loader   = DataLoader(val_ds,   batch_size=1, shuffle=False, num_workers=2, pin_memory=False)
 
     # ── Initialize model and diffusion ─────────────────────────────────────
     print("Initializing model...")
@@ -161,40 +165,22 @@ def main():
     print(f"{'═' * 70}\n")
 
     # ── Training loop ─────────────────────────────────────────────────────
-    print(f"Starting training for {cfg.EPOCHS} epochs …\n")
+    console = Console()
+    console.print(f"[bold green]Starting training for {cfg.EPOCHS} epochs...[/bold green]")
     t0 = time.time()
 
-    for epoch in range(start_epoch, cfg.EPOCHS + 1):
+    epoch_progress = tqdm(range(start_epoch, cfg.EPOCHS + 1), desc="Epochs", colour="cyan")
+    for epoch in epoch_progress:
         epoch_start_time = time.time()
         denoise_model.train()
         epoch_loss = 0.0
         num_batches = 0
-        _printed_batch_shape = False
 
         # ── Training ───────────────────────────────────────────────────────
-        print("About to iterate over train_loader", flush=True)
+        # ── Training ───────────────────────────────────────────────────────
         for batch in train_loader:
-            print("!!! Entering loop body !!!", flush=True)
-            print(f"Batch type: {type(batch)}", flush=True)
-            if hasattr(batch, 'num_graphs'):
-                print(f"Batch num_graphs: {batch.num_graphs}", flush=True)
             batch = batch.to(device)
-            # Print batch info for first 2 batches
-            if hasattr(batch, 'target_img'):
-                print(f"Batch target_img shape: {batch.target_img.shape}", flush=True)
-                print(f"Batch target_img type: {type(batch.target_img)}", flush=True)
-                # Try to see if we can index the first dimension
-                if batch.target_img.dim() >= 1:
-                    print(f"Batch target_img[0] shape: {batch.target_img[0].shape}", flush=True)
-            print(f"DEBUG: _printed_batch_shape = {_printed_batch_shape}", flush=True)
-            if not _printed_batch_shape:
-                print("!!! About to print batch target image info !!!", flush=True)
-                try:
-                    print(f"batch.target_img type: {type(batch.target_img)}", flush=True)
-                    print(f"batch.target_img shape: {batch.target_img.shape}", flush=True)
-                except Exception as e:
-                    print(f"Error while printing batch.target_img: {e}", flush=True)
-                _printed_batch_shape = True
+
             optimizer.zero_grad()
 
             # Sample random timesteps for each image in the batch
@@ -216,6 +202,12 @@ def main():
             epoch_loss += loss.item()
             num_batches += 1
             global_step += 1
+
+            # Update progress bar
+            if num_batches > 0:
+                avg_loss = epoch_loss / num_batches
+                current_lr = scheduler.get_last_lr()[0]
+                epoch_progress.set_postfix({'loss': f'{avg_loss:.4f}', 'lr': f'{current_lr:.2e}'})
 
             # Optional: log to tensorboard
             if writer is not None and global_step % 100 == 0:
@@ -278,6 +270,14 @@ def main():
             writer.add_scalar("Loss/val", avg_val_loss, epoch)
             writer.add_scalar("Loss/ema_val", ema_avg_val_loss, epoch)
             writer.add_scalar("LR", scheduler.get_last_lr()[0], epoch)
+
+            # Update epoch progress bar with metrics
+            epoch_progress.set_postfix({
+                'loss': f'{avg_train_loss:.4f}',
+                'val_loss': f'{avg_val_loss:.4f}',
+                'ema_val_loss': f'{ema_avg_val_loss:.4f}',
+                'lr': f'{scheduler.get_last_lr()[0]:.2e}'
+            })
 
         # ── Save samples periodically ───────────────────────────────────────
         if epoch % cfg.SAVE_EVERY == 0 or epoch == cfg.EPOCHS:
