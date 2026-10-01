@@ -235,11 +235,44 @@ def validate(model, val_loader, kl_weight, device, compute_gen_metrics=True):
         real_np = real.cpu().numpy()
         feats_np = batch.x.cpu().numpy()
 
-        for p, r, f in zip(pred_np, real_np, feats_np):
-            iou = compute_iou(p, r)
-            all_ious.append(iou)
+        # Vectorized IoU computation for efficiency
+        # pred_np and real_np have shape (N, 4) where N is number of nodes
+        # Extract coordinates for predicted boxes
+        px1 = pred_np[:, 0] - pred_np[:, 2] / 2  # center x - width/2
+        py1 = pred_np[:, 1] - pred_np[:, 3] / 2  # center y - height/2
+        px2 = pred_np[:, 0] + pred_np[:, 2] / 2  # center x + width/2
+        py2 = pred_np[:, 1] + pred_np[:, 3] / 2  # center y + height/2
+
+        # Extract coordinates for ground truth boxes
+        rx1 = real_np[:, 0] - real_np[:, 2] / 2
+        ry1 = real_np[:, 1] - real_np[:, 3] / 2
+        rx2 = real_np[:, 0] + real_np[:, 2] / 2
+        ry2 = real_np[:, 1] + real_np[:, 3] / 2
+
+        # Intersection coordinates
+        ix1 = np.maximum(px1, rx1)
+        iy1 = np.maximum(py1, ry1)
+        ix2 = np.minimum(px2, rx2)
+        iy2 = np.minimum(py2, ry2)
+
+        # Intersection area
+        iw = np.maximum(ix2 - ix1, 0.0)
+        ih = np.maximum(iy2 - iy1, 0.0)
+        intersection = iw * ih
+
+        # Areas
+        area_pred = (px2 - px1) * (py2 - py1)
+        area_real = (rx2 - rx1) * (ry2 - ry1)
+        union = area_pred + area_real - intersection
+
+        # IoU (avoid division by zero)
+        iou_vals = np.divide(intersection, union, out=np.zeros_like(intersection), where=union>0)
+
+        # Process results
+        for iou_val, f in zip(iou_vals, feats_np):
+            all_ious.append(iou_val)
             rtype = room_type_from_onehot(f)
-            room_type_ious[rtype].append(iou)
+            room_type_ious[rtype].append(iou_val)
 
         # Skip overlap rate computation for large batches to prevent O(N^2) explosion
         # Threshold chosen to balance accuracy with computational feasibility
@@ -256,13 +289,33 @@ def validate(model, val_loader, kl_weight, device, compute_gen_metrics=True):
     metrics["gen_iou_median"] = float(np.median(all_ious)) if all_ious else 0.0
     metrics["overlap_rate"] = float(np.mean(overlap_rates)) if overlap_rates else 0.0
 
-    # Precision / Recall / F1 at each IoU threshold
-    for t in cfg.IOU_THRESHOLDS:
-        p, r, f1 = precision_recall_f1(all_ious, t)
-        key = f"{t:.2f}"
-        metrics[f"prec@{key}"]   = p
-        metrics[f"recall@{key}"] = r
-        metrics[f"f1@{key}"]     = f1
+    # Precision / Recall / F1 at each IoU threshold - optimized to single pass
+    if len(all_ious) > 0:
+        # Sort IoUs once for efficient threshold computation
+        sorted_ious = np.sort(all_ious)
+        n_ious = len(all_ious)
+
+        for t in cfg.IOU_THRESHOLDS:
+            # Find first index where IoU >= threshold using binary search
+            # tp = number of IoUs >= threshold
+            idx = np.searchsorted(sorted_ious, t, side='left')
+            tp = n_ious - idx
+
+            precision = tp / n_ious
+            recall = tp / n_ious      # same since rooms are 1-to-1 matched
+            f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+            key = f"{t:.2f}"
+            metrics[f"prec@{key}"]   = precision
+            metrics[f"recall@{key}"] = recall
+            metrics[f"f1@{key}"]     = f1
+    else:
+        # Handle empty case
+        for t in cfg.IOU_THRESHOLDS:
+            key = f"{t:.2f}"
+            metrics[f"prec@{key}"]   = 0.0
+            metrics[f"recall@{key}"] = 0.0
+            metrics[f"f1@{key}"]     = 0.0
 
     # Per-room-type IoU breakdown
     for rt, ious in room_type_ious.items():
@@ -404,9 +457,12 @@ def main():
     # ── training loop ───────────────────────────────────────────────────
     print(f"Starting training for {args.epochs} epochs …\n", flush=True)
     t0 = time.time()
+    print(f"Time initialized: {t0}", flush=True)
+    print(f"About to enter epoch loop", flush=True)
 
     for epoch in range(1, args.epochs + 1):
         print(f"Starting epoch {epoch}", flush=True)
+        print(f"Epoch {epoch} started", flush=True)
         kl_weight = get_kl_weight(epoch, args.epochs)
 
         # ── train ───────────────────────────────────────────────────────
