@@ -334,10 +334,10 @@ def main():
     args = parser.parse_args()
 
     device = torch.device(cfg.DEVICE if torch.cuda.is_available() else "cpu")
-    print(f"Device : {device}")
+    print(f"Device : {device}", flush=True)
 
     # ── data ────────────────────────────────────────────────────────────
-    print("Loading dataset (this reads the 300 MB .pkl once)...")
+    print("Loading dataset (this reads the 300 MB .pkl once)...", flush=True)
     import pickle
     with open(cfg.DATA_PKL, "rb") as f:
         all_plans = pickle.load(f)
@@ -376,6 +376,13 @@ def main():
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Model : {n_params:,} trainable parameters")
 
+    # CUDA diagnostics and synchronization
+    if device.type == "cuda":
+        print(f"CUDA Device: {torch.cuda.get_device_name(device)}")
+        print(f"CUDA Memory Usage: {torch.cuda.memory_allocated(device) / 1024**2:.1f} MB / {torch.cuda.max_memory_allocated(device) / 1024**2:.1f} MB")
+        # Synchronize to catch any initialization errors early
+        torch.cuda.synchronize(device)
+
     os.makedirs(cfg.CHECKPOINT_DIR, exist_ok=True)
     best_gen_mse = float("inf")
 
@@ -395,10 +402,11 @@ def main():
     print(f"{'═' * 60}\n")
 
     # ── training loop ───────────────────────────────────────────────────
-    print(f"Starting training for {args.epochs} epochs …\n")
+    print(f"Starting training for {args.epochs} epochs …\n", flush=True)
     t0 = time.time()
 
     for epoch in range(1, args.epochs + 1):
+        print(f"Starting epoch {epoch}", flush=True)
         kl_weight = get_kl_weight(epoch, args.epochs)
 
         # ── train ───────────────────────────────────────────────────────
