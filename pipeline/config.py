@@ -49,7 +49,7 @@ DROPOUT = 0.1
 
 
 # ── Training ───────────────────────────────────────────────────────────
-BATCH_SIZE = 16                     # Increased for better GPU utilization (was 4)
+BATCH_SIZE = 8                      # Reduced from 16 to avoid OOM (was 4, tried 16)
 LEARNING_RATE = 2e-4                # Adjusted for diffusion training
 LR_MIN = 1e-6                       # Minimum learning rate for cosine annealing
 EPOCHS = 1000                       # More epochs may be needed
