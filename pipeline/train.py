@@ -100,6 +100,7 @@ def get_graph_embedding(batch, graph_encoder, device):
 
 def main():
     # ── Setup ─────────────────────────────────────────────────────────────
+    torch.backends.cudnn.benchmark = True
     device = torch.device(cfg.DEVICE if torch.cuda.is_available() else "cpu")
     print(f"Device : {device}")
 
@@ -199,6 +200,10 @@ def main():
     console.print(f"[bold green]Starting training for {cfg.EPOCHS} epochs...[/bold green]")
     t0 = time.time()
 
+    use_amp = getattr(cfg, 'USE_AMP', True) and device.type == 'cuda'
+    scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
+    grad_accum_steps = getattr(cfg, 'GRADIENT_ACCUMULATION_STEPS', 1)
+
     epoch_progress = tqdm(range(start_epoch, cfg.EPOCHS + 1), desc="Epochs", colour="cyan")
     for epoch in epoch_progress:
         epoch_start_time = time.time()
@@ -207,34 +212,41 @@ def main():
         num_batches = 0
 
         # ── Training ───────────────────────────────────────────────────────
+        optimizer.zero_grad(set_to_none=True)
         for batch in train_loader:
             batch = batch.to(device)
 
-            optimizer.zero_grad()
+            with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+                # Precompute graph embedding for the entire batch (to avoid redundant computation)
+                global_emb = get_graph_embedding(batch, graph_encoder, device)
 
-            # Precompute graph embedding for the entire batch (to avoid redundant computation)
-            global_emb = get_graph_embedding(batch, graph_encoder, device)
+                # Sample random timesteps for each image in the batch
+                t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
 
-            # Sample random timesteps for each image in the batch
-            t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
+                # Compute loss using precomputed graph embedding
+                loss = diffusion.p_losses(
+                    x_start=batch.target_img,
+                    t=t,
+                    graph_data=batch,  # Still needed for compatibility, but model will ignore if cond_emb provided
+                    cond_emb=global_emb
+                )
+                loss = loss / grad_accum_steps
 
-            # Compute loss using precomputed graph embedding
-            loss = diffusion.p_losses(
-                x_start=batch.target_img,
-                t=t,
-                graph_data=batch,  # Still needed for compatibility, but model will ignore if cond_emb provided
-                cond_emb=global_emb
-            )
+            scaler.scale(loss).backward()
 
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(denoise_model.parameters(), cfg.GRAD_CLIP_NORM)
-            optimizer.step()
-            scheduler.step()
-            ema.update()
-
-            epoch_loss += loss.item()
             num_batches += 1
             global_step += 1
+
+            if num_batches % grad_accum_steps == 0 or num_batches == len(train_loader):
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(denoise_model.parameters(), cfg.GRAD_CLIP_NORM)
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad(set_to_none=True)
+                scheduler.step()
+                ema.update()
+
+            epoch_loss += loss.item() * grad_accum_steps
 
             # Update progress bar
             if num_batches > 0:
@@ -251,7 +263,7 @@ def main():
         # ── Validation ─────────────────────────────────────────────────────
         denoise_model.eval()
         ema.apply_shadow()
-        with torch.no_grad():
+        with torch.no_grad(), torch.amp.autocast(device_type=device.type, enabled=use_amp):
             val_loss = 0.0
             ema_val_loss = 0.0
             val_batches = 0
@@ -331,7 +343,7 @@ def main():
         if epoch % cfg.SAVE_EVERY == 0 or epoch == cfg.EPOCHS:
             print(f"  Generating samples at epoch {epoch}...")
             denoise_model.eval()
-            with torch.no_grad():
+            with torch.no_grad(), torch.amp.autocast(device_type=device.type, enabled=use_amp):
                 # Use a few validation samples for conditioning
                 val_samples = next(iter(val_loader))
                 val_samples = val_samples.to(device)

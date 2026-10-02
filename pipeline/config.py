@@ -49,7 +49,7 @@ DROPOUT = 0.1
 
 
 # ── Training ───────────────────────────────────────────────────────────
-BATCH_SIZE = 8                      # Reduced from 16 to avoid OOM (was 4, tried 16)
+BATCH_SIZE = 4                      # Halved to prevent OOM on 10GB VRAM
 LEARNING_RATE = 2e-4                # Adjusted for diffusion training
 LR_MIN = 1e-6                       # Minimum learning rate for cosine annealing
 EPOCHS = 1000                       # More epochs may be needed
@@ -83,4 +83,6 @@ NUM_SAMPLES_TO_GENERATE = 4         # How many samples to generate during evalua
 # If we want to weight different parts of the image, we can add here.
 LOSS_TYPE = "l2"                    # Options: l2, l1, huber
 # Gradient accumulation steps (set >1 to simulate larger batch size)
-# GRADIENT_ACCUMULATION_STEPS = 4
+GRADIENT_ACCUMULATION_STEPS = 2
+# Use Automatic Mixed Precision for faster training and less memory usage
+USE_AMP = True
