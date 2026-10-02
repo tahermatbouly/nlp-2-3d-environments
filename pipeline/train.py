@@ -79,12 +79,14 @@ class EMA:
 
 def get_graph_embedding(batch, graph_encoder, device):
     """Compute graph embedding from batch data."""
-    global_emb, _ = graph_encoder(
-        batch.x.to(device),
-        batch.edge_index.to(device),
-        edge_attr=batch.edge_attr.to(device) if hasattr(batch, "edge_attr") else None,
-        batch_index=batch.batch.to(device) if hasattr(batch, "batch") else None
-    )
+    # Force full precision for GATConv to prevent NaN overflow
+    with torch.amp.autocast(device_type=device.type, enabled=False):
+        global_emb, _ = graph_encoder(
+            batch.x.to(device).float(),
+            batch.edge_index.to(device),
+            edge_attr=batch.edge_attr.to(device).float() if hasattr(batch, "edge_attr") else None,
+            batch_index=batch.batch.to(device) if hasattr(batch, "batch") else None
+        )
     return global_emb
 
 
@@ -214,10 +216,10 @@ def main():
         for batch in train_loader:
             batch = batch.to(device)
 
+            # Precompute graph embedding in full precision to prevent GATConv NaN overflow
+            global_emb = get_graph_embedding(batch, graph_encoder, device)
+            
             with torch.amp.autocast(device_type=device.type, enabled=use_amp):
-                # Precompute graph embedding for the entire batch (to avoid redundant computation)
-                global_emb = get_graph_embedding(batch, graph_encoder, device)
-
                 # Sample random timesteps for each image in the batch
                 t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
 
@@ -237,7 +239,11 @@ def main():
 
             if num_batches % grad_accum_steps == 0 or num_batches == len(train_loader):
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(denoise_model.parameters(), cfg.GRAD_CLIP_NORM)
+                # Clip gradients for both models
+                torch.nn.utils.clip_grad_norm_(
+                    list(denoise_model.parameters()) + list(graph_encoder.parameters()), 
+                    cfg.GRAD_CLIP_NORM
+                )
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)

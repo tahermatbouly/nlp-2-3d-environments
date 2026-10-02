@@ -147,9 +147,10 @@ class GraphEncoder(nn.Module):
         """
         h = self.proj_in(x)
         for i in range(self.num_layers):
+            h_prev = h
             h = self.gnns[i](h, edge_index, edge_attr=edge_attr)
             h = self.norms[i](h)
-            h = F.relu(h) + h  # residual connection
+            h = F.relu(h) + h_prev  # correct residual connection
         
         # Global pooling: mean over nodes per graph in the batch
         if batch_index is not None:

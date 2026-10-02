@@ -86,3 +86,4 @@ LOSS_TYPE = "l2"                    # Options: l2, l1, huber
 GRADIENT_ACCUMULATION_STEPS = 2
 # Use Automatic Mixed Precision for faster training and less memory usage
 USE_AMP = True
+LR_WARMUP_EPOCHS = 5
