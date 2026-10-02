@@ -171,9 +171,16 @@ class FloorPlanDataset(Dataset):
         if skipped:
             print(f"[dataset] Skipped {skipped} plans with no valid geometry.")
 
+        # Precompute category colors to avoid repeated hex-to-RGB conversion
+        self._category_rgb_float = {}
+        for category, hex_color in CATEGORY_COLORS.items():
+            hex_color = hex_color.lstrip('#')
+            rgb_float = np.array([int(hex_color[i:i+2], 16) for i in (0, 2, 4)]) / 255.0
+            self._category_rgb_float[category] = rgb_float
+
         # Cache for loaded data objects (to avoid reprocessing the same index multiple times)
         # Using LRU cache with maximum size to prevent memory issues
-        self._cache_max_size = 150  # Increased from 50 to 150 for better hit rate
+        self._cache_max_size = 500  # Increased from 150 to 500 for better hit rate
         self._cache = OrderedDict()
 
     # ── PyG interface ───────────────────────────────────────────────────
@@ -211,21 +218,16 @@ class FloorPlanDataset(Dataset):
                 continue
             # Convert geometry to mask (binary)
             mask = geometry_to_mask(geom, shape=(img_size, img_size), point_radius=2, line_thickness=2)
-            # Get color for this category
-            color_hex = CATEGORY_COLORS.get(category, "#ffffff")
-            # Convert hex to RGB float in [0,1]
-            color_hex = color_hex.lstrip('#')
-            color_rgb = np.array([int(color_hex[i:i+2], 16) for i in (0, 2, 4)]) / 255.0
-            # Create color array for vectorized application
-            color_array = np.ones((img_size, img_size, 3), dtype=np.float32) * np.array(color_rgb)
-            # Apply color where mask is 255 (foreground) - vectorized across all channels
-            canvas = np.where(mask[..., None] == 255, color_array, canvas)
+            # Get precomputed color for this category
+            color_rgb = self._category_rgb_float.get(category, np.array([1.0, 1.0, 1.0]))  # Default to white
+            # Apply color where mask is 255 (foreground) - in-place to avoid temporary arrays
+            if np.any(mask):  # Optional check to skip empty masks
+                canvas[mask == 255] = color_rgb
 
         # Convert canvas to torch tensor [3, H, W] and normalize to [-1, 1] for diffusion
         target_image = torch.from_numpy(canvas).permute(2, 0, 1).float()  # [3, H, W]
         target_image = target_image * 2.0 - 1.0  # [0,1] -> [-1,1]
-        # Add batch dimension for proper batching: [1, 3, H, W]
-        target_image = target_image.unsqueeze(0)
+        # Note: No batch dimension here - DataLoader will add it during batching
 
         # ── assemble PyG Data object ─────────────────────────────────────
         data = Data(

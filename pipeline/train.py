@@ -77,6 +77,27 @@ class EMA:
                 param.data = self.shadow[name]
 
 
+def get_graph_embedding(batch, graph_encoder, device):
+    """Compute graph embedding from batch data."""
+    with torch.no_grad():
+        global_emb, _ = graph_encoder(
+            batch.x.to(device),
+            batch.edge_index.to(device),
+            batch.edge_attr.to(device) if hasattr(batch, "edge_attr") else None
+        )
+    # Handle shape for broadcasting to batch size
+    if global_emb.dim() == 2:
+        # If [*, cond_emb_dim], check if we need to repeat for batch size
+        if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
+            global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
+        # Else assume it's already [B, cond_emb_dim] or compatible
+    else:
+        global_emb = global_emb.unsqueeze(0)  # [1, cond_emb_dim]
+        if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
+            global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
+    return global_emb
+
+
 def main():
     # ── Setup ─────────────────────────────────────────────────────────────
     device = torch.device(cfg.DEVICE if torch.cuda.is_available() else "cpu")
@@ -135,7 +156,7 @@ def main():
     ema = EMA(denoise_model, decay=cfg.EMA_DECAY, start_step=cfg.EMA_START_STEP, update_every=cfg.EMA_UPDATE_EVERY)
 
     # Optimizer and scheduler
-    optimizer = Adam(denoise_model.parameters(), lr=cfg.LEARNING_RATE, betas=(cfg.ADAM_BETA1, cfg.ADAM_BETA2))
+    optimizer = Adam(list(denoise_model.parameters()) + list(graph_encoder.parameters()), lr=cfg.LEARNING_RATE, betas=(cfg.ADAM_BETA1, cfg.ADAM_BETA2))
     total_steps = len(train_loader) * cfg.EPOCHS
     warmup_steps = len(train_loader) * cfg.LR_WARMUP_EPOCHS if hasattr(cfg, 'LR_WARMUP_EPOCHS') else 0
 
@@ -192,24 +213,7 @@ def main():
             optimizer.zero_grad()
 
             # Precompute graph embedding for the entire batch (to avoid redundant computation)
-            with torch.no_grad():
-                # Use separate graph encoder to avoid redundant computation in model
-                global_emb, _ = graph_encoder(
-                    batch.x,
-                    batch.edge_index,
-                    batch.edge_attr if hasattr(batch, "edge_attr") else None
-                )
-                # Handle shape for broadcasting to batch size
-                if global_emb.dim() == 2:
-                    # If [*, cond_emb_dim], check if we need to repeat for batch size
-                    if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
-                        global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
-                    # Else assume it's already [B, cond_emb_dim] or compatible
-                else:
-                    global_emb = global_emb.unsqueeze(0)  # [1, cond_emb_dim]
-                    if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
-                        global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
-
+            global_emb = get_graph_embedding(batch, graph_encoder, device)
 
             # Sample random timesteps for each image in the batch
             t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
@@ -246,10 +250,10 @@ def main():
 
         # ── Validation ─────────────────────────────────────────────────────
         denoise_model.eval()
-        # ── Validation ─────────────────────────────────────────────────────
-        denoise_model.eval()
+        ema.apply_shadow()
         with torch.no_grad():
             val_loss = 0.0
+            ema_val_loss = 0.0
             val_batches = 0
             for batch in val_loader:
                 batch = batch.to(device)
@@ -272,6 +276,7 @@ def main():
                         global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
 
                 t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
+                # Regular model loss
                 loss = diffusion.p_losses(
                     x_start=batch.target_img,
                     t=t,
@@ -279,79 +284,18 @@ def main():
                     cond_emb=global_emb
                 )
                 val_loss += loss.item()
+
+                # EMA model loss
+                ema_loss = diffusion.p_losses(
+                    x_start=batch.target_img,
+                    t=t,
+                    graph_data=batch,  # Still needed for compatibility, but model will ignore if cond_emb provided
+                    cond_emb=global_emb
+                )
+                ema_val_loss += ema_loss.item()
                 val_batches += 1
             avg_val_loss = val_loss / max(val_batches, 1)
-
-        # EMA validation (optional)
-        ema.apply_shadow()
-        with torch.no_grad():
-            ema_val_loss = 0.0
-            ema_val_batches = 0
-            for batch in val_loader:
-                batch = batch.to(device)
-                # Precompute graph embedding once per batch
-                with torch.no_grad():
-                    global_emb, _ = graph_encoder(
-                        batch.x,
-                        batch.edge_index,
-                        batch.edge_attr if hasattr(batch, "edge_attr") else None
-                    )
-                # Handle shape for broadcasting to batch size
-                if global_emb.dim() == 2:
-                    # If [*, cond_emb_dim], check if we need to repeat for batch size
-                    if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
-                        global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
-                    # Else assume it's already [B, cond_emb_dim] or compatible
-                else:
-                    global_emb = global_emb.unsqueeze(0)  # [1, cond_emb_dim]
-                    if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
-                        global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
-
-                t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
-                loss = diffusion.p_losses(
-                    x_start=batch.target_img,
-                    t=t,
-                    graph_data=batch,  # Still needed for compatibility, but model will ignore if cond_emb provided
-                    cond_emb=global_emb
-                )
-                ema_val_loss += loss.item()
-                ema_val_batches += 1
-            ema_avg_val_loss = ema_val_loss / max(ema_val_batches, 1)
-        ema.restore()
-        ema.apply_shadow()
-        with torch.no_grad():
-            ema_val_loss = 0.0
-            ema_val_batches = 0
-            for batch in val_loader:
-                batch = batch.to(device)
-                # Precompute graph embedding once per batch
-                with torch.no_grad():
-                    global_emb, _ = graph_encoder(
-                        batch.x,
-                        batch.edge_index,
-                        batch.edge_attr if hasattr(batch, 'edge_attr') else None
-                    )
-                # Handle shape for broadcasting to batch size
-                if global_emb.dim() == 2:
-                    # If [*, cond_emb_dim], check if we need to repeat for batch size
-                    if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
-                        global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
-                    # Else assume it's already [B, cond_emb_dim] or compatible
-                else:
-                    global_emb = global_emb.unsqueeze(0)  # [1, cond_emb_dim]
-                    if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
-                        global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
-
-                t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
-                loss = diffusion.p_losses(
-                    x_start=batch.target_img,
-                    t=t,
-                    graph_data=batch,  # Still needed for compatibility, but model will ignore if cond_emb provided
-                    cond_emb=global_emb
-                )
-                ema_val_loss += loss.item()
-                ema_val_batches += 1
-            ema_avg_val_loss = ema_val_loss / max(ema_val_batches, 1)
+            ema_avg_val_loss = ema_val_loss / max(val_batches, 1)
         ema.restore()
 
         # ── Logging ────────────────────────────────────────────────────────
@@ -394,21 +338,7 @@ def main():
                 # Limit to 4 samples
                 val_samples = val_samples[:4]
                 # Precompute graph embedding for validation samples
-                global_emb, _ = graph_encoder(
-                    val_samples.x,
-                    val_samples.edge_index,
-                    val_samples.edge_attr if hasattr(val_samples, "edge_attr") else None
-                )
-                # Handle shape for broadcasting to batch size
-                if global_emb.dim() == 2:
-                    # If [*, cond_emb_dim], check if we need to repeat for batch size
-                    if global_emb.shape[0] == 1 and val_samples.target_img.shape[0] > 1:
-                        global_emb = global_emb.repeat(val_samples.target_img.shape[0], 1)
-                    # Else assume it's already [B, cond_emb_dim] or compatible
-                else:
-                    global_emb = global_emb.unsqueeze(0)  # [1, cond_emb_dim]
-                    if global_emb.shape[0] == 1 and val_samples.target_img.shape[0] > 1:
-                        global_emb = global_emb.repeat(val_samples.target_img.shape[0], 1)
+                global_emb = get_graph_embedding(val_samples, graph_encoder, device)
                 # Generate samples
                 sampled_images = diffusion.sample_with_guidance(
                     batch_size=val_samples.shape[0],

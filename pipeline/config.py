@@ -35,7 +35,7 @@ GNN_HIDDEN_DIM = 256                    # Increased capacity for graph encoding
 # Diffusion model channels (base width)
 BASE_CHANNELS = 96
 # Number of diffusion timesteps
-TIMESTEPS = 1000
+TIMESTEPS = 250                         # Reduced for faster training (was 1000)
 # Image size for generated floorplans
 IMAGE_SIZE = 256
 # Input channels to diffusion model (RGB = 3)
@@ -49,7 +49,7 @@ DROPOUT = 0.1
 
 
 # ── Training ───────────────────────────────────────────────────────────
-BATCH_SIZE = 4                     # Reduced for larger model and image resolution
+BATCH_SIZE = 16                     # Increased for better GPU utilization (was 4)
 LEARNING_RATE = 2e-4                # Adjusted for diffusion training
 LR_MIN = 1e-6                       # Minimum learning rate for cosine annealing
 EPOCHS = 1000                       # More epochs may be needed
