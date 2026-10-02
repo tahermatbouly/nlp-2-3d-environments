@@ -227,7 +227,8 @@ class FloorPlanDataset(Dataset):
         # Convert canvas to torch tensor [3, H, W] and normalize to [-1, 1] for diffusion
         target_image = torch.from_numpy(canvas).permute(2, 0, 1).float()  # [3, H, W]
         target_image = target_image * 2.0 - 1.0  # [0,1] -> [-1,1]
-        # Note: No batch dimension here - DataLoader will add it during batching
+        # Add batch dimension for proper batching: [1, 3, H, W]
+        target_image = target_image.unsqueeze(0)
 
         # ── assemble PyG Data object ─────────────────────────────────────
         data = Data(
