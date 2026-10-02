@@ -237,7 +237,7 @@ class FloorPlanDataset(Dataset):
             edge_attr=edge_attr,
             target_img=target_image,
             plan_id=plan_dict.get("id", -1),
-            plan_bounds=torch.tensor(plan_bounds, dtype=torch.float),
+            plan_bounds=torch.tensor(plan_bounds, dtype=torch.float).unsqueeze(0),
         )
 
         # Cache the data object to avoid reprocessing

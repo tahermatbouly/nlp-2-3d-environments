@@ -138,19 +138,26 @@ class GraphEncoder(nn.Module):
         # Final projection to get global embedding (we'll use mean pooling)
         self.out_dim = hidden_dim
 
-    def forward(self, x, edge_index, edge_attr=None):
+    def forward(self, x, edge_index, edge_attr=None, batch_index=None):
         """
         x: [N, in_dim] node features
         edge_index: [2, E]
         edge_attr: [E, edge_dim] or None
+        batch_index: [N] mapping nodes to graphs in the batch
         """
         h = self.proj_in(x)
         for i in range(self.num_layers):
             h = self.gnns[i](h, edge_index, edge_attr=edge_attr)
             h = self.norms[i](h)
             h = F.relu(h) + h  # residual connection
-        # Global pooling: mean over nodes
-        global_emb = h.mean(dim=0, keepdim=True)  # [1, hidden_dim]
+        
+        # Global pooling: mean over nodes per graph in the batch
+        if batch_index is not None:
+            from torch_geometric.nn import global_mean_pool
+            global_emb = global_mean_pool(h, batch_index)
+        else:
+            global_emb = h.mean(dim=0, keepdim=True)  # [1, hidden_dim]
+            
         return global_emb, h  # return both global and node embeddings if needed
 
 
@@ -378,7 +385,7 @@ class GaussianDiffusion:
     @torch.no_grad()
     def sample(self, batch_size=1, graph_data=None, cond_emb=None):
         """Generate samples."""
-        return self.p_sample_loop((batch_size, self.image_size, self.image_size, 3), graph_data, cond_emb=cond_emb)
+        return self.p_sample_loop((batch_size, 3, self.image_size, self.image_size), graph_data, cond_emb=cond_emb)
 
     @torch.no_grad()
     def sample_with_guidance(self, batch_size=1, graph_data=None, cond_emb=None, guidance_scale=2.5):

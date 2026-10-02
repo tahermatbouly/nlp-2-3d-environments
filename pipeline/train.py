@@ -79,22 +79,12 @@ class EMA:
 
 def get_graph_embedding(batch, graph_encoder, device):
     """Compute graph embedding from batch data."""
-    with torch.no_grad():
-        global_emb, _ = graph_encoder(
-            batch.x.to(device),
-            batch.edge_index.to(device),
-            batch.edge_attr.to(device) if hasattr(batch, "edge_attr") else None
-        )
-    # Handle shape for broadcasting to batch size
-    if global_emb.dim() == 2:
-        # If [*, cond_emb_dim], check if we need to repeat for batch size
-        if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
-            global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
-        # Else assume it's already [B, cond_emb_dim] or compatible
-    else:
-        global_emb = global_emb.unsqueeze(0)  # [1, cond_emb_dim]
-        if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
-            global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
+    global_emb, _ = graph_encoder(
+        batch.x.to(device),
+        batch.edge_index.to(device),
+        edge_attr=batch.edge_attr.to(device) if hasattr(batch, "edge_attr") else None,
+        batch_index=batch.batch.to(device) if hasattr(batch, "batch") else None
+    )
     return global_emb
 
 
@@ -278,22 +268,7 @@ def main():
             for batch in val_loader:
                 batch = batch.to(device)
                 # Precompute graph embedding once per batch
-                with torch.no_grad():
-                    global_emb, _ = graph_encoder(
-                        batch.x,
-                        batch.edge_index,
-                        batch.edge_attr if hasattr(batch, "edge_attr") else None
-                    )
-                # Handle shape for broadcasting to batch size
-                if global_emb.dim() == 2:
-                    # If [*, cond_emb_dim], check if we need to repeat for batch size
-                    if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
-                        global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
-                    # Else assume it's already [B, cond_emb_dim] or compatible
-                else:
-                    global_emb = global_emb.unsqueeze(0)  # [1, cond_emb_dim]
-                    if global_emb.shape[0] == 1 and batch.target_img.shape[0] > 1:
-                        global_emb = global_emb.repeat(batch.target_img.shape[0], 1)
+                global_emb = get_graph_embedding(batch, graph_encoder, device)
 
                 t = torch.randint(0, diffusion.timesteps, (batch.target_img.shape[0],), device=device).long()
                 # Regular model loss
@@ -321,7 +296,7 @@ def main():
         # ── Logging ────────────────────────────────────────────────────────
         epoch_time = time.time() - epoch_start_time
         total_time = time.time() - t0
-        eta_seconds = (total_time / epoch) * (cfg.EPOCHS - epoch)
+        eta_seconds = (total_time / max(1, epoch)) * (cfg.EPOCHS - epoch)
         eta = timedelta(seconds=int(eta_seconds))
 
         print(f"Epoch {epoch:4d}/{cfg.EPOCHS}  "
@@ -355,13 +330,12 @@ def main():
                 # Use a few validation samples for conditioning
                 val_samples = next(iter(val_loader))
                 val_samples = val_samples.to(device)
-                # Limit to 4 samples
-                val_samples = val_samples[:4]
+                
                 # Precompute graph embedding for validation samples
                 global_emb = get_graph_embedding(val_samples, graph_encoder, device)
                 # Generate samples
                 sampled_images = diffusion.sample_with_guidance(
-                    batch_size=val_samples.shape[0],
+                    batch_size=val_samples.num_graphs,
                     graph_data=val_samples,
                     cond_emb=global_emb,
                     guidance_scale=cfg.GUIDANCE_STRENGTH if hasattr(cfg, "GUIDANCE_STRENGTH") else 2.5
@@ -388,28 +362,26 @@ def main():
         # ── Save checkpoint ───────────────────────────────────────────────
         if epoch % cfg.SAVE_EVERY == 0 or epoch == cfg.EPOCHS:
             ckpt_path = os.path.join(cfg.CHECKPOINT_DIR, f"checkpoint_epoch_{epoch}.pt")
-            torch.save({
+            
+            # Unwrap compiled model for clean state_dict
+            model_to_save = denoise_model._orig_mod if hasattr(denoise_model, '_orig_mod') else denoise_model
+            
+            save_dict = {
                 'epoch': epoch,
                 'global_step': global_step,
-                'model_state_dict': denoise_model.state_dict(),
+                'model_state_dict': model_to_save.state_dict(),
                 'ema_state_dict': ema.shadow if hasattr(ema, 'shadow') else {},
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'loss': avg_train_loss,
-            }, ckpt_path)
+            }
+            
+            torch.save(save_dict, ckpt_path)
             print(f"    Saved checkpoint to {ckpt_path}")
 
             # Also save as latest
             latest_path = os.path.join(cfg.CHECKPOINT_DIR, "latest.pt")
-            torch.save({
-                'epoch': epoch,
-                'global_step': global_step,
-                'model_state_dict': denoise_model.state_dict(),
-                'ema_state_dict': ema.shadow if hasattr(ema, 'shadow') else {},
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'loss': avg_train_loss,
-            }, latest_path)
+            torch.save(save_dict, latest_path)
 
     # ── Final ─────────────────────────────────────────────────────────────
     total_time = time.time() - t0
