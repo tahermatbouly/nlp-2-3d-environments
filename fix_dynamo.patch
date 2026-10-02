@@ -1,0 +1,20 @@
+--- pipeline/model.py
++++ pipeline/model.py
+@@ -38,7 +38,7 @@
+         device = x.device
+         half_dim = self.dim // 2
+         emb = np.log(10000) / (half_dim - 1)
+-        emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
++        emb = torch.exp(torch.arange(half_dim, dtype=torch.float32, device=device) * -emb)
+         emb = x[:, None] * emb[None, :]
+         emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
+         return emb
+@@ -92,7 +92,7 @@
+         cond_params = self.cond_mlp(cond_emb)
+         scale, shift = cond_params.chunk(2, dim=1)
+         h = self.norm2(h)
+-        h = h * (scale[:, :, None, None] + 1) + shift[:, :, None, None]
++        h = h * (scale[:, :, None, None] + 1.0).to(h.dtype) + shift[:, :, None, None]
+         h = self.act(h)
+         h = self.conv2(h)
+ 
