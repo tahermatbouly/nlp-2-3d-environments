@@ -101,6 +101,8 @@ def get_graph_embedding(batch, graph_encoder, device):
 def main():
     # ── Setup ─────────────────────────────────────────────────────────────
     torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.allow_tf32 = True
+    torch.backends.cuda.matmul.allow_tf32 = True
     device = torch.device(cfg.DEVICE if torch.cuda.is_available() else "cpu")
     print(f"Device : {device}")
 
@@ -135,6 +137,12 @@ def main():
         cond_emb_dim=cond_emb_dim,
         dropout=cfg.DROPOUT
     ).to(device)
+
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        if hasattr(torch, "compile"):
+            denoise_model = torch.compile(denoise_model)
 
     # Create separate graph encoder for precomputing embeddings (to avoid redundant computation in model)
     graph_encoder = GraphEncoder(

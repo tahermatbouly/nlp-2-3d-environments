@@ -52,7 +52,7 @@ DROPOUT = 0.1
 BATCH_SIZE = 4                      # Halved to prevent OOM on 10GB VRAM
 LEARNING_RATE = 2e-4                # Adjusted for diffusion training
 LR_MIN = 1e-6                       # Minimum learning rate for cosine annealing
-EPOCHS = 1000                       # More epochs may be needed
+EPOCHS = 300                        # Reduced to ~1M total steps for faster convergence
 DEVICE = "cuda"                     # "cuda" or "cpu"
 
 # Noise schedule (linear beta schedule)
