@@ -55,7 +55,7 @@ class ModelConfig:
     n_heads: int = 8
     graph_layers: int = 4
     denoiser_layers: int = 6
-    dropout: float = 0.0
+    dropout: float = 0.1
     max_rooms: int = MAX_ROOMS
     max_vertices: int = MAX_VERTICES
     timesteps: int = 1000

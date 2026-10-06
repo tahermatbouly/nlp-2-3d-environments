@@ -77,7 +77,7 @@ class FloorplanDiffusion(nn.Module):
         total = l_diff
 
         if self.cfg.mode == "poly":
-            ce = F.cross_entropy(count_logits.float()[rmask], batch["nverts"][rmask])
+            ce = F.cross_entropy(count_logits.float()[rmask], batch["nverts"][rmask], label_smoothing=0.1)
             out["count"] = ce
             total = total + tc.w_count * ce
 
