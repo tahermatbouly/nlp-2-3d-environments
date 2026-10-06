@@ -92,7 +92,7 @@ class FloorplanDiffusion(nn.Module):
             sw = self.alpha_bar[t[idx]]                           # signal weight in [0,1]
             weights = dict(area=tc.w_area, valid=tc.w_valid, overlap=tc.w_overlap,
                            conn=tc.w_conn, nonconn=tc.w_nonconn,
-                           ortho=getattr(tc, 'w_ortho', 0.5), gap=getattr(tc, 'w_gap', 0.5))
+                           ortho=tc.w_ortho)
             aux = 0.0
             for name, val in terms.items():
                 v = (val * sw).mean()
@@ -152,9 +152,15 @@ class FloorplanDiffusion(nn.Module):
         return dict(x=x, tok_mask=tok, counts=counts)
 
 
+def clean_state_dict(sd):
+    """Remove the ``_orig_mod.`` prefix that ``torch.compile`` adds to every key."""
+    return {k.removeprefix("_orig_mod."): v for k, v in sd.items()}
+
+
 def load_checkpoint(path: str, device: str = "cpu", use_ema: bool = True) -> "FloorplanDiffusion":
     """Rebuild a trained model (EMA weights by default) from a ``train.py`` checkpoint."""
     ck = torch.load(path, map_location=device, weights_only=False)
     model = FloorplanDiffusion(ModelConfig(**ck["model_cfg"]), ck["S"]).to(device)
-    model.load_state_dict(ck["ema"] if use_ema and ck.get("ema") else ck["model"], strict=False)
+    sd = ck["ema"] if use_ema and ck.get("ema") else ck["model"]
+    model.load_state_dict(clean_state_dict(sd), strict=True)
     return model.eval()

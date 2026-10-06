@@ -51,7 +51,14 @@ def room_level(cand: Candidate, s: Dict[str, Any]) -> Dict[str, List[float]]:
 
 def summarise(rows: List[Dict[str, Any]]) -> Dict[str, float]:
     keys = rows[0].keys()
-    return {k: float(np.nanmean([r[k] for r in rows])) for k in keys}
+    out = {}
+    for k in keys:
+        vals = [r[k] for r in rows]
+        if not vals or np.isnan(vals).all():
+            out[k] = np.nan
+        else:
+            out[k] = float(np.nanmean(vals))
+    return out
 
 
 def evaluate_ground_truth(samples: List[Dict[str, Any]]) -> Dict[str, float]:

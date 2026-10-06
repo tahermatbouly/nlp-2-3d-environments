@@ -31,7 +31,7 @@ from rich.table import Table
 
 from .config import ModelConfig, TrainConfig
 from .data import FloorplanDataset, collate, load_cache
-from .diffusion import FloorplanDiffusion
+from .diffusion import FloorplanDiffusion, clean_state_dict
 
 
 def parse() -> argparse.Namespace:
@@ -116,6 +116,7 @@ def main():
     tl, vl = mk(train, True), mk(val, False)
 
     model = FloorplanDiffusion(mc, S).to(device)
+    raw = model          # uncompiled module (shares parameters with the compiled wrapper)
     console.print(f"[bold cyan][train][/bold cyan] parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
     
     if getattr(tc, "compile", False) and hasattr(torch, "compile"):
@@ -126,7 +127,7 @@ def main():
         opt = torch.optim.AdamW(model.parameters(), lr=tc.lr, weight_decay=tc.weight_decay, betas=(0.9, 0.99), fused=device.startswith("cuda"))
     except TypeError:
         opt = torch.optim.AdamW(model.parameters(), lr=tc.lr, weight_decay=tc.weight_decay, betas=(0.9, 0.99))
-    ema = EMA(model, tc.ema_decay)
+    ema = EMA(raw, tc.ema_decay)
     use_amp = tc.amp and device.startswith("cuda")
     amp_dtype = torch.bfloat16 if use_amp and torch.cuda.is_bf16_supported() else torch.float16
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp and amp_dtype == torch.float16)
@@ -135,14 +136,16 @@ def main():
     start_epoch, step, best = 0, 0, float("inf")
     if a.resume:
         ck = torch.load(a.resume, map_location=device, weights_only=False)
-        model.load_state_dict(ck["model"]); ema.shadow.load_state_dict(ck["ema"]); opt.load_state_dict(ck["opt"])
+        raw.load_state_dict(clean_state_dict(ck["model"]))
+        ema.shadow.load_state_dict(clean_state_dict(ck["ema"]))
+        opt.load_state_dict(ck["opt"])
         start_epoch, step, best = ck["epoch"] + 1, ck["step"], ck.get("best", best)
         console.print(f"[bold cyan][train][/bold cyan] resumed from {a.resume} at epoch {start_epoch}")
     total_steps = tc.epochs * len(tl)
     log = open(os.path.join(tc.out_dir, "log.jsonl"), "a")
 
     def save(path, epoch):
-        torch.save(dict(model=model.state_dict(), ema=ema.shadow.state_dict(), opt=opt.state_dict(),
+        torch.save(dict(model=raw.state_dict(), ema=ema.shadow.state_dict(), opt=opt.state_dict(),
                         epoch=epoch, step=step, best=best, model_cfg=mc.to_dict(), S=S,
                         train_cfg=asdict(tc), phase=a.phase), path)
 

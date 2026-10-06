@@ -228,6 +228,30 @@ class DiffusionTests(unittest.TestCase):
         self.assertGreater(r["csr"], 0.5)                     # checker is not absurdly strict
         self.assertEqual(r["invalid_polygon"], 0.0)
 
+    def test_load_checkpoint_with_compile_prefix(self):
+        """torch.compile prefixes keys with `_orig_mod.`; loading must still restore every weight."""
+        import tempfile
+        from floorplan_diffusion.diffusion import load_checkpoint
+        cfg = small_cfg("poly")
+        m = FloorplanDiffusion(cfg, 100.0)
+        sd = {"_orig_mod." + k: v for k, v in m.state_dict().items()}
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "ck.pt")
+            torch.save(dict(model=sd, ema=sd, model_cfg=cfg.to_dict(), S=100.0), p)
+            m2 = load_checkpoint(p)
+        for (k, a), b in zip(m.state_dict().items(), m2.state_dict().values()):
+            self.assertTrue(torch.equal(a, b), k)
+
+    def test_aux_losses_near_zero_on_ground_truth(self):
+        """No aux term may substantially penalise real plans (it would fight the diffusion target)."""
+        c = cache()
+        b = collate([FloorplanDataset(c["train"], c["S"])[i] for i in range(32)])
+        P = b["coords"] * c["S"]
+        vm = b["vmask"] & b["room_mask"].unsqueeze(-1)
+        out = losses.aux_losses(P, vm, b["room_mask"], b["area"], b["adj"])
+        for k, v in out.items():
+            self.assertLess(float(v.mean()), 0.1, k)
+
 
 if __name__ == "__main__":
     unittest.main()

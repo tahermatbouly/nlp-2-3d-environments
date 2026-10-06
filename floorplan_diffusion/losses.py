@@ -168,30 +168,24 @@ def connectivity_losses(P, vmask, rmask, adj):
 
 
 def ortho_loss(P, vmask, rmask):
-    """Encourages edges to be perfectly horizontal or vertical (axis-aligned)."""
+    """Encourages edges to be horizontal or vertical (axis-aligned).
+
+    Scale-invariant: min(|dx|,|dy|) / |edge|, which lies in [0, ~0.71]."""
     Q = _succ(P, vmask)
     edge = (Q - P).abs()
-    # min(dx, dy) should be 0 for axis-aligned edges
-    ortho = torch.minimum(edge[..., 0], edge[..., 1])
+    length = torch.sqrt((edge * edge).sum(-1) + 1e-6)
+    ortho = torch.minimum(edge[..., 0], edge[..., 1]) / (length + 1e-3)
     ortho = (ortho * vmask).sum(-1) / vmask.sum(-1).clamp(min=1)
     return (ortho * rmask).sum(-1) / rmask.sum(-1).clamp(min=1)
 
 
-def strict_gap_loss(P, vmask, rmask, adj):
-    """Strictly penalizes distance between connected rooms to pull them flush, overriding wall thickness."""
-    D = pair_distances(P, vmask)
-    N = P.shape[1]
-    pair_ok = rmask[:, :, None] & rmask[:, None, :] & ~torch.eye(N, dtype=torch.bool, device=P.device)[None]
-    is_edge = (adj > 0) & pair_ok
-    gap = (D * is_edge).sum((-1, -2)) / is_edge.sum((-1, -2)).clamp(min=1)
-    return gap
-
-
 def aux_losses(P, vmask, rmask, target_area, adj, exempt=None) -> Dict[str, torch.Tensor]:
+    # NOTE: a "strict gap" loss (pull connected rooms to distance 0) was removed: ground-truth
+    # rooms are separated by ~2.5-unit walls, so it penalised the real data. `conn` already
+    # enforces the measured per-edge-type tolerance; walls are drawn into the gap at render time.
     conn, nonc = connectivity_losses(P, vmask, rmask, adj)
     return dict(area=area_loss(P, vmask, rmask, target_area),
                 valid=validity_loss(P, vmask, rmask, target_area),
                 overlap=overlap_loss(P, vmask, rmask, exempt=exempt),
                 conn=conn, nonconn=nonc,
-                ortho=ortho_loss(P, vmask, rmask),
-                gap=strict_gap_loss(P, vmask, rmask, adj))
+                ortho=ortho_loss(P, vmask, rmask))
