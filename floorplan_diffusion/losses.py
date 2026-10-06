@@ -64,7 +64,8 @@ def _orient(a, b, c):
     """Signed distance of c to the line a->b (in length units)."""
     ab, ac = b - a, c - a
     cross = ab[..., 0] * ac[..., 1] - ab[..., 1] * ac[..., 0]
-    return cross / (ab.norm(dim=-1) + 1e-3)
+    ab_len = torch.sqrt((ab * ab).sum(-1) + 1e-6)
+    return cross / (ab_len + 1e-3)
 
 
 def validity_loss(P, vmask, rmask, target_area):
@@ -140,7 +141,8 @@ def pair_distances(P, vmask):
     ab = b - a
     t = ((p - a) * ab).sum(-1) / ((ab * ab).sum(-1) + 1e-6)
     t = t.clamp(0.0, 1.0)
-    d = (p - (a + t[..., None] * ab)).norm(dim=-1)                       # B,N,N,V,V
+    vec = p - (a + t[..., None] * ab)
+    d = torch.sqrt((vec * vec).sum(-1) + 1e-6)                           # B,N,N,V,V
     ok = vmask[:, :, None, :, None] & vmask[:, None, :, None, :]
     d = d.masked_fill(~ok, BIG)
     M = d.amin(dim=(-1, -2))                                              # B,N,N
