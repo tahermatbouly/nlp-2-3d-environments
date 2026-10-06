@@ -214,13 +214,40 @@ def to_plan_dict(cand: Candidate, plan_id: int = -1) -> Dict[str, Any]:
 
 # ----------------------------------------------------------------------------
 # sampling pipeline (§20-23)
+def align_walls(rings: List[np.ndarray], tol: float = 1.5) -> List[np.ndarray]:
+    """Snap coordinates across all rooms to shared grid lines if they are within `tol`."""
+    if not rings: return rings
+    out = [r.copy() for r in rings]
+    for axis in (0, 1):
+        vals = []
+        for r in out:
+            if len(r) >= 3: vals.extend(r[:, axis])
+        if not vals: continue
+        vals = np.array(vals)
+        order = np.argsort(vals)
+        vals_sorted = vals[order]
+        diffs = np.diff(vals_sorted)
+        breaks = np.where(diffs > tol)[0] + 1
+        groups = np.split(order, breaks)
+        means = [vals[g].mean() for g in groups]
+        for g, m in zip(groups, means):
+            vals[g] = m
+        
+        idx = 0
+        for r in out:
+            if len(r) >= 3:
+                r[:, axis] = vals[idx:idx + len(r)]
+                idx += len(r)
+    return out
+
 # ----------------------------------------------------------------------------
 
 @torch.no_grad()
 def generate_floorplans(model, graphs: List[nx.Graph], K: int = 8, steps: int = 50, eta: float = 0.0,
                         device: str = "cpu", seed: int = 0, batch_size: int = 32,
                         sample_counts: bool = False, drop_invalid: bool = False,
-                        snap_grid: float = 2.0) -> List[List[Candidate]]:
+                        snap_grid: float = 0.0, guidance: float = 0.0,
+                        guide_start: float = 0.6, guide_iters: int = 2) -> List[List[Candidate]]:
     """For every input graph draw K samples, validate and rank them (best first).
 
     ``drop_invalid=True`` rejects candidates that violate the constraints (§22);
@@ -234,7 +261,8 @@ def generate_floorplans(model, graphs: List[nx.Graph], K: int = 8, steps: int = 
         chunk = flat[s:s + batch_size]
         batch = graph_batch([G for _, G in chunk], model.S)
         batch = {k: v.to(device) for k, v in batch.items()}
-        out = model.sample(batch, steps=steps, eta=eta, sample_counts=sample_counts, generator=gen)
+        out = model.sample(batch, steps=steps, eta=eta, sample_counts=sample_counts, generator=gen,
+                           guidance=guidance, guide_start=guide_start, guide_iters=guide_iters)
         P, vm = model.to_polygons(out["x"], out["tok_mask"])
         P, vm = P.cpu().numpy().astype(np.float64), vm.cpu().numpy()
         for b, (gi, G) in enumerate(chunk):
@@ -244,7 +272,9 @@ def generate_floorplans(model, graphs: List[nx.Graph], K: int = 8, steps: int = 
                 r = P[b, i][vm[b, i]]
                 if snap_grid > 0:
                     r = np.round(r / snap_grid) * snap_grid
-                rings.append(clean_ring(r) if len(r) >= 3 else r)
+                rings.append(r)
+            rings = align_walls(rings)
+            rings = [clean_ring(r) if len(r) >= 3 else r for r in rings]
             results[gi].append(build_candidate(G, rings))
     for gi in range(len(results)):
         cands = results[gi]

@@ -74,11 +74,11 @@ def evaluate_ground_truth(samples: List[Dict[str, Any]]) -> Dict[str, float]:
     return summarise(rows)
 
 
-def evaluate_model(model, samples: List[Dict[str, Any]], K: int = 8, steps: int = 50, eta: float = 0.0,
-                   device: str = "cpu", seed: int = 0, batch_size: int = 32) -> Dict[str, Any]:
+def evaluate_model(model, samples: List[Dict[str, Any]], K: int = 16, steps: int = 50, eta: float = 0.0,
+                   device: str = "cpu", seed: int = 0, batch_size: int = 32, guidance: float = 1.0) -> Dict[str, Any]:
     graphs = [sample_to_graph(s) for s in samples]
     all_cands = generate_floorplans(model, graphs, K=K, steps=steps, eta=eta, device=device,
-                                    seed=seed, batch_size=batch_size)
+                                    seed=seed, batch_size=batch_size, guidance=guidance)
     floor, rooms, rooms_best = [], [], []
     for s, cands in zip(samples, all_cands):
         top = cands[0]

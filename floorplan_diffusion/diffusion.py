@@ -105,7 +105,8 @@ class FloorplanDiffusion(nn.Module):
     # -- sampling -------------------------------------------------------------
     @torch.no_grad()
     def sample(self, batch, steps: int = 50, eta: float = 0.0, sample_counts: bool = False,
-               generator: Optional[torch.Generator] = None) -> Dict[str, torch.Tensor]:
+               generator: Optional[torch.Generator] = None, guidance: float = 0.0,
+               guide_start: float = 0.6, guide_iters: int = 2) -> Dict[str, torch.Tensor]:
         """DDIM (eta=0) / DDPM-like (eta=1) sampling of coordinates for the graphs in ``batch``.
 
         ``batch`` supplies only conditioning (types, areas, edges); any geometry in it is ignored.
@@ -138,6 +139,8 @@ class FloorplanDiffusion(nn.Module):
             tb = t.expand(B)
             x0_hat = self.net.denoise(x, tb, room_h, glob_h, rmask, tok).float()
             x0_hat = x0_hat.clamp(-6.0, 6.0)
+            if guidance > 0 and t < guide_start * T:
+                x0_hat = self._guide(x0_hat, tok, batch, guidance, guide_iters)
             ab_t = self.alpha_bar[t]
             if t_prev is None:
                 x = x0_hat
@@ -150,6 +153,22 @@ class FloorplanDiffusion(nn.Module):
             x = (ab_p.sqrt() * x0_hat + dir_xt + sigma * z) * tok.unsqueeze(-1)
         x = x * tok.unsqueeze(-1)
         return dict(x=x, tok_mask=tok, counts=counts)
+
+    @torch.enable_grad()
+    def _guide(self, x0, tok, batch, scale, iters):
+        rmask = batch["room_mask"]
+        exempt = batch["room_type"] == ROOM_TYPE_TO_ID["front_door"]
+        w = dict(overlap=2.0, conn=1.0, nonconn=0.5, area=1.0, valid=0.5)
+        for _ in range(iters):
+            x = x0.detach().requires_grad_(True)
+            P, vm = self.to_polygons(x, tok)
+            terms = aux_losses(P, vm & rmask[..., None], rmask, batch["area"],
+                               batch["adj"], exempt=exempt, overlap_grid=32)
+            L = sum(w.get(k, 0.0) * terms[k] for k in terms).sum()
+            g, = torch.autograd.grad(L, x)
+            g = g / (g.pow(2).mean(dim=(1, 2, 3), keepdim=True).sqrt() + 1e-8)
+            x0 = (x - 0.01 * scale * g) * tok.unsqueeze(-1)
+        return x0.detach()
 
 
 def clean_state_dict(sd):

@@ -179,13 +179,13 @@ def ortho_loss(P, vmask, rmask):
     return (ortho * rmask).sum(-1) / rmask.sum(-1).clamp(min=1)
 
 
-def aux_losses(P, vmask, rmask, target_area, adj, exempt=None) -> Dict[str, torch.Tensor]:
+def aux_losses(P, vmask, rmask, target_area, adj, exempt=None, overlap_grid=64) -> Dict[str, torch.Tensor]:
     # NOTE: a "strict gap" loss (pull connected rooms to distance 0) was removed: ground-truth
     # rooms are separated by ~2.5-unit walls, so it penalised the real data. `conn` already
     # enforces the measured per-edge-type tolerance; walls are drawn into the gap at render time.
     conn, nonc = connectivity_losses(P, vmask, rmask, adj)
     return dict(area=area_loss(P, vmask, rmask, target_area),
                 valid=validity_loss(P, vmask, rmask, target_area),
-                overlap=overlap_loss(P, vmask, rmask, exempt=exempt),
+                overlap=overlap_loss(P, vmask, rmask, exempt=exempt, grid=overlap_grid),
                 conn=conn, nonconn=nonc,
                 ortho=ortho_loss(P, vmask, rmask))

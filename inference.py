@@ -17,9 +17,10 @@ def main():
     parser.add_argument("--out", type=str, default="inference_out.png", help="Output image path")
     parser.add_argument("--device", type=str, default="cuda", help="Compute device (cuda/cpu)")
     parser.add_argument("--steps", type=int, default=50, help="DDPM sampling steps")
-    parser.add_argument("--samples", type=int, default=8, help="Number of samples to draw (best is chosen)")
+    parser.add_argument("--samples", type=int, default=16, help="Number of samples to draw (best is chosen)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--idx", type=int, default=-1, help="Specific test index to use (default: random)")
+    parser.add_argument("--guidance", type=float, default=1.0, help="Geometric guidance scale")
     args = parser.parse_args()
 
     print("Loading dataset cache...")
@@ -38,7 +39,7 @@ def main():
     print(f"Generating {args.samples} samples for test plan ID {sample['id']}...")
     # generate_floorplans automatically ranks by topological/geometric validity
     cands = generate_floorplans(model, [G], K=args.samples, steps=args.steps, 
-                                device=args.device, seed=args.seed)[0]
+                                device=args.device, seed=args.seed, guidance=args.guidance)[0]
     
     top = cands[0]
     print(f"Top candidate valid: {top.valid}, score: {top.score:.3f}")

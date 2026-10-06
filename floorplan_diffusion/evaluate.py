@@ -23,9 +23,10 @@ def main():
     p.add_argument("--data", default="ResPlan.pkl")
     p.add_argument("--split_file", default="split.json")
     p.add_argument("--cache_dir", default="cache")
-    p.add_argument("--k", type=int, default=8)
+    p.add_argument("--k", type=int, default=16)
     p.add_argument("--steps", type=int, default=50)
     p.add_argument("--eta", type=float, default=0.0)
+    p.add_argument("--guidance", type=float, default=1.0)
     p.add_argument("--n", type=int, default=0, help="limit #plans (0 = all)")
     p.add_argument("--batch_size", type=int, default=32)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -38,8 +39,8 @@ def main():
     samples = cache[a.split][: a.n] if a.n else cache[a.split]
     model = load_checkpoint(a.ckpt, a.device, use_ema=not a.no_ema)
     print(f"[eval] {a.split}: {len(samples)} plans, K={a.k}, steps={a.steps}")
-    res = evaluate_model(model, samples, K=a.k, steps=a.steps, eta=a.eta, device=a.device,
-                         batch_size=a.batch_size)
+    res = evaluate_model(model, samples, K=a.k, steps=a.steps, eta=a.eta, guidance=a.guidance,
+                         device=a.device, batch_size=a.batch_size)
     res["ground_truth_reference"] = evaluate_ground_truth(samples)
     print(json.dumps(res, indent=2))
     out = a.out or os.path.join(os.path.dirname(a.ckpt), f"eval_{a.split}.json")
@@ -56,7 +57,8 @@ def main():
         from .metrics import gt_polygons
         sub = samples[: a.plot]
         graphs = [sample_to_graph(s) for s in sub]
-        cands = generate_floorplans(model, graphs, K=a.k, steps=a.steps, eta=a.eta, device=a.device)
+        cands = generate_floorplans(model, graphs, K=a.k, steps=a.steps, eta=a.eta,
+                                    guidance=a.guidance, device=a.device)
         os.makedirs(os.path.join(os.path.dirname(out), "plots"), exist_ok=True)
         for s, G, cs in zip(sub, graphs, cands):
             fig, axs = plt.subplots(1, 3, figsize=(15, 5))

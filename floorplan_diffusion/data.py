@@ -18,7 +18,7 @@ from torch.utils.data import Dataset
 
 from .config import (EDGE_TYPE_TO_ID, MAX_ROOMS, MAX_VERTICES, MIN_ROOM_AREA,
                      NUM_ROOM_TYPES, ROOM_TYPE_TO_ID)
-from .geometry import preprocess_polygon
+from .geometry import canonical_start, preprocess_polygon
 
 # ----------------------------------------------------------------------------
 # graph -> tensors (no coordinates; this is all the graph encoder may ever see)
@@ -182,22 +182,40 @@ def coords_to_rect(coords: torch.Tensor, vmask: torch.Tensor) -> torch.Tensor:
 
 
 class FloorplanDataset(Dataset):
-    def __init__(self, samples: List[Dict], S: float):
+    def __init__(self, samples: List[Dict], S: float, augment: bool = False):
         self.samples, self.S = samples, S
+        self.augment = augment
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, i):
         s = self.samples[i]
+        coords = s["coords"]
+        vmask = s["vmask"]
+        if self.augment:
+            rot = np.random.randint(4)
+            flip = np.random.rand() < 0.5
+            c = coords.copy()
+            for _ in range(rot):
+                c = np.stack([-c[..., 1], c[..., 0]], axis=-1)
+            if flip:
+                c[..., 0] = -c[..., 0]
+            for j in range(len(s["room_type"])):
+                ring = c[j][vmask[j]]
+                if flip:
+                    ring = ring[::-1]
+                c[j][:len(ring)] = canonical_start(ring)
+            coords = c
+            
         return dict(
             id=s["id"], n=len(s["room_type"]),
             room_type=torch.as_tensor(s["room_type"]),
             area=torch.as_tensor(s["area"]),
             edge_index=torch.as_tensor(s["edge_index"]),
             edge_type=torch.as_tensor(s["edge_type"]),
-            coords=torch.as_tensor(s["coords"]) / self.S,
-            vmask=torch.as_tensor(s["vmask"]),
+            coords=torch.as_tensor(coords) / self.S,
+            vmask=torch.as_tensor(vmask),
             nverts=torch.as_tensor(s["nverts"]),
         )
 

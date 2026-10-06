@@ -51,7 +51,8 @@ def parse() -> argparse.Namespace:
     p.add_argument("--denoiser_layers", type=int, default=mc.denoiser_layers)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--resume", default="")
-    p.add_argument("--quick_eval", type=int, default=32, help="#val plans for periodic generation check (0=off)")
+    p.add_argument("--init_from", default="", help="load weights only (starts at epoch 0)")
+    p.add_argument("--quick_eval", type=int, default=64, help="#val plans for periodic generation check (0=off)")
     p.add_argument("--max_steps", type=int, default=0, help="stop after this many optimiser steps (smoke tests)")
     return p.parse_args()
 
@@ -110,7 +111,7 @@ def main():
     val = cache["val"][: max(64, tc.subset // 8)] if tc.subset else cache["val"]
     console = Console()
     console.print(f"[bold cyan][train][/bold cyan] mode={mode} phase={a.phase} train={len(train)} val={len(val)} S={S} device={device}")
-    mk = lambda s, shuf: DataLoader(FloorplanDataset(s, S), batch_size=tc.batch_size, shuffle=shuf,
+    mk = lambda s, shuf: DataLoader(FloorplanDataset(s, S, augment=(tc.augment and shuf)), batch_size=tc.batch_size, shuffle=shuf,
                                     num_workers=tc.num_workers, collate_fn=collate, drop_last=shuf,
                                     pin_memory=device.startswith("cuda"), persistent_workers=tc.num_workers > 0)
     tl, vl = mk(train, True), mk(val, False)
@@ -133,21 +134,27 @@ def main():
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp and amp_dtype == torch.float16)
 
     os.makedirs(tc.out_dir, exist_ok=True)
-    start_epoch, step, best = 0, 0, float("inf")
+    start_epoch, step, best_diff, best_csr = 0, 0, float("inf"), -float("inf")
     if a.resume:
         ck = torch.load(a.resume, map_location=device, weights_only=False)
         raw.load_state_dict(clean_state_dict(ck["model"]))
         ema.shadow.load_state_dict(clean_state_dict(ck["ema"]))
         opt.load_state_dict(ck["opt"])
-        start_epoch, step, best = ck["epoch"] + 1, ck["step"], ck.get("best", best)
+        best_diff, best_csr = ck.get("best_diff", best_diff), ck.get("best_csr", best_csr)
+        start_epoch, step = ck["epoch"] + 1, ck["step"]
         console.print(f"[bold cyan][train][/bold cyan] resumed from {a.resume} at epoch {start_epoch}")
+    if a.init_from:
+        ck = torch.load(a.init_from, map_location=device, weights_only=False)
+        raw.load_state_dict(clean_state_dict(ck["model"]))
+        ema.shadow.load_state_dict(clean_state_dict(ck["ema"]))
+        console.print(f"[bold cyan][train][/bold cyan] initialized weights from {a.init_from}")
     total_steps = tc.epochs * len(tl)
     log = open(os.path.join(tc.out_dir, "log.jsonl"), "a")
 
     def save(path, epoch):
         torch.save(dict(model=raw.state_dict(), ema=ema.shadow.state_dict(), opt=opt.state_dict(),
-                        epoch=epoch, step=step, best=best, model_cfg=mc.to_dict(), S=S,
-                        train_cfg=asdict(tc), phase=a.phase), path)
+                        epoch=epoch, step=step, best_diff=best_diff, best_csr=best_csr,
+                        model_cfg=mc.to_dict(), S=S, train_cfg=asdict(tc), phase=a.phase), path)
 
     with Progress(
         TextColumn("[progress.description]{task.description}"),
@@ -197,14 +204,19 @@ def main():
             if (epoch + 1) % tc.val_every == 0 or epoch == tc.epochs - 1 or (a.max_steps and step >= a.max_steps):
                 v = validate(ema.shadow, vl, tc, device, aux_scale)
                 rec.update({"val_" + k: x for k, x in v.items()})
-                if v["diff"] < best:
-                    best = v["diff"]; save(os.path.join(tc.out_dir, "best.pt"), epoch)
+                if v["diff"] < best_diff:
+                    best_diff = v["diff"]; save(os.path.join(tc.out_dir, "best_diff.pt"), epoch)
                 if a.quick_eval:
                     from .metrics import evaluate_model
-                    m = evaluate_model(ema.shadow, val[: a.quick_eval], K=2, steps=20, device=device)
+                    m = evaluate_model(ema.shadow, val[: a.quick_eval], K=4, steps=20, device=device)
                     rec["quick_csr_any_of_k"] = m["floorplan"]["csr_any_of_k"]
                     rec["quick_invalid_polygon_pct"] = m["floorplan"]["invalid_polygon_pct"]
                     rec["quick_connectivity_acc"] = m["floorplan"]["connectivity_acc"]
+                    score = rec["quick_csr_any_of_k"] - 0.01 * rec["quick_invalid_polygon_pct"]
+                    if score > best_csr:
+                        best_csr = score; save(os.path.join(tc.out_dir, "best.pt"), epoch)
+                elif v["diff"] <= best_diff: # fallback if quick_eval off
+                    save(os.path.join(tc.out_dir, "best.pt"), epoch)
                 
                 table = Table(title=f"Epoch {epoch + 1} Summary", show_header=True, header_style="bold magenta", expand=True)
                 table.add_column("Metric", style="cyan")

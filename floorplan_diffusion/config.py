@@ -100,3 +100,4 @@ class TrainConfig:
     val_every: int = 5
     subset: int = 0                 # >0: use only this many train plans (smoke tests)
     compile: bool = True
+    augment: bool = True
