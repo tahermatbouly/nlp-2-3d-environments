@@ -106,7 +106,7 @@ def soft_inside(P, vmask, pts):
     return w.clamp(0.0, 1.0)
 
 
-def overlap_loss(P, vmask, rmask, grid: int = 24, exempt=None):
+def overlap_loss(P, vmask, rmask, grid: int = 64, exempt=None):
     """Soft rasterised pairwise overlap area, relative to total room area.
 
     ``exempt`` [B,N] marks rooms (e.g. front_door) whose overlaps are ignored."""

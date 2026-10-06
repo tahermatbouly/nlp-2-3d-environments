@@ -60,7 +60,7 @@ class FloorplanDiffusion(nn.Module):
         return self.net.encode(batch["room_type"], af, batch["adj"], batch["room_mask"])
 
     # -- training -------------------------------------------------------------
-    def training_losses(self, batch, tc: TrainConfig, aux_scale: float = 0.0, aux_samples: int = 8) -> Dict[str, torch.Tensor]:
+    def training_losses(self, batch, tc: TrainConfig, aux_scale: float = 0.0, aux_samples: int = 16) -> Dict[str, torch.Tensor]:
         x0, tok = self.targets(batch)
         rmask = batch["room_mask"]
         B = x0.shape[0]
