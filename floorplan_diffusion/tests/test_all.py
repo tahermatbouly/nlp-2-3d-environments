@@ -73,15 +73,17 @@ class DataTests(unittest.TestCase):
         ds = FloorplanDataset([s], S)
         b = collate([ds[0]])
         back = b["coords"][0, : len(s["room_type"])].numpy() * S
-        np.testing.assert_allclose(back, s["coords"], atol=1e-4)
+        for j in range(len(s["room_type"])):
+            n = s["nverts"][j]
+            np.testing.assert_allclose(back[j, :n], s["coords"][j, :n], atol=1e-4)
 
     def test_encoder_never_sees_coordinates(self):
         c = cache()
         m = FloorplanDiffusion(small_cfg("poly"), c["S"]).eval()
         b = collate([FloorplanDataset(c["train"][:4], c["S"])[i] for i in range(4)])
-        h1, g1, _ = m.encode(b)
+        h1, g1 = m.encode(b)
         b2 = dict(b); b2["coords"] = torch.randn_like(b["coords"]); b2["rect"] = torch.randn_like(b["rect"])
-        h2, g2, _ = m.encode(b2)
+        h2, g2 = m.encode(b2)
         self.assertTrue(torch.equal(h1, h2) and torch.equal(g1, g2))
 
 
@@ -104,8 +106,8 @@ class ModelTests(unittest.TestCase):
             x0b, tokb = m.targets(both)
             t = torch.tensor([300])
             with torch.no_grad():
-                hs, gs, _ = m.encode(single)
-                hb, gb, _ = m.encode(both)
+                hs, gs = m.encode(single)
+                hb, gb = m.encode(both)
                 self.assertTrue(torch.allclose(hs[0, :n], hb[0, :n], atol=1e-5))     # padding-invariant encoder
                 a = m.net.denoise(x0s, t, hs, gs, single["room_mask"], toks)
                 b = m.net.denoise(x0b[:1, :n], t, hb[:1, :n], gb[:1], both["room_mask"][:1, :n], tokb[:1, :n])
@@ -121,8 +123,8 @@ class ModelTests(unittest.TestCase):
         bp["room_type"] = b["room_type"][:, perm]
         bp["area"] = b["area"][:, perm]
         bp["adj"] = b["adj"][:, perm][:, :, perm]
-        h, g, _ = m.encode(b)
-        hp, gp, _ = m.encode(bp)
+        h, g = m.encode(b)
+        hp, gp = m.encode(bp)
         self.assertTrue(torch.allclose(h[:, perm], hp, atol=1e-5))
         self.assertTrue(torch.allclose(g, gp, atol=1e-5))
 

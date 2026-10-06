@@ -64,7 +64,7 @@ class FloorplanDiffusion(nn.Module):
         x0, tok = self.targets(batch)
         rmask = batch["room_mask"]
         B = x0.shape[0]
-        room_h, glob_h, count_logits = self.encode(batch)
+        room_h, glob_h = self.encode(batch)
         t = torch.randint(0, self.cfg.timesteps, (B,), device=x0.device)
         ab = self.alpha_bar[t].view(B, 1, 1, 1)
         noise = torch.randn_like(x0)
@@ -75,11 +75,6 @@ class FloorplanDiffusion(nn.Module):
         l_diff = (((x0_hat.float() - x0) ** 2) * w).sum() / (w.sum() * x0.shape[-1]).clamp(min=1.0)
         out = {"diff": l_diff}
         total = l_diff
-
-        if self.cfg.mode == "poly":
-            ce = F.cross_entropy(count_logits.float()[rmask], batch["nverts"][rmask], label_smoothing=0.1)
-            out["count"] = ce
-            total = total + tc.w_count * ce
 
         if aux_scale > 0:
             # use only the least-noisy samples of the batch (aux terms are costly and need a sane x0)
@@ -116,19 +111,13 @@ class FloorplanDiffusion(nn.Module):
         rmask = batch["room_mask"]
         B, N = rmask.shape
         K, D = self.cfg.tokens_per_room, self.cfg.coord_dim
-        room_h, glob_h, count_logits = self.encode(batch)
+        room_h, glob_h = self.encode(batch)
 
         if self.cfg.mode == "rect":
             counts = torch.full((B, N), 4, device=dev, dtype=torch.long)
             tok = rmask[:, :, None].clone()
         else:
-            logits = count_logits.float().clone()
-            logits[..., :MIN_VERTICES] = float("-inf")
-            if sample_counts:
-                probs = logits.softmax(-1).reshape(-1, logits.shape[-1])
-                counts = torch.multinomial(probs, 1, generator=generator).view(B, N)
-            else:
-                counts = logits.argmax(-1)
+            counts = torch.full((B, N), self.cfg.max_vertices, device=dev, dtype=torch.long)
             tok = (torch.arange(K, device=dev)[None, None] < counts.unsqueeze(-1)) & rmask[:, :, None]
 
         x = torch.randn(B, N, K, D, device=dev, generator=generator) * tok.unsqueeze(-1)

@@ -87,7 +87,6 @@ class TrainConfig:
     ema_decay: float = 0.999
     aux_start_epoch: int = 20       # phase 3: auxiliary losses ramp in after this epoch
     aux_ramp_epochs: int = 20
-    w_count: float = 0.5
     w_area: float = 1.0
     w_valid: float = 1.0
     w_overlap: float = 2.0

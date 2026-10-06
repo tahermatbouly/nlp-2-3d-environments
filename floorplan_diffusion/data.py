@@ -193,10 +193,10 @@ class FloorplanDataset(Dataset):
         s = self.samples[i]
         coords = s["coords"]
         vmask = s["vmask"]
+        c = coords.copy()
         if self.augment:
             rot = np.random.randint(4)
             flip = np.random.rand() < 0.5
-            c = coords.copy()
             for _ in range(rot):
                 c = np.stack([-c[..., 1], c[..., 0]], axis=-1)
             if flip:
@@ -206,7 +206,15 @@ class FloorplanDataset(Dataset):
                 if flip:
                     ring = ring[::-1]
                 c[j][:len(ring)] = canonical_start(ring)
-            coords = c
+                
+        # Pad coordinates by repeating the last valid vertex up to MAX_VERTICES
+        for j in range(len(s["room_type"])):
+            n = s["nverts"][j]
+            if n < MAX_VERTICES:
+                c[j, n:] = c[j, n-1]
+                
+        # Set vmask to all True for the valid rooms so the diffusion model denoises everything
+        new_vmask = np.ones_like(vmask, dtype=bool)
             
         return dict(
             id=s["id"], n=len(s["room_type"]),
@@ -214,8 +222,8 @@ class FloorplanDataset(Dataset):
             area=torch.as_tensor(s["area"]),
             edge_index=torch.as_tensor(s["edge_index"]),
             edge_type=torch.as_tensor(s["edge_type"]),
-            coords=torch.as_tensor(coords) / self.S,
-            vmask=torch.as_tensor(vmask),
+            coords=torch.as_tensor(c) / self.S,
+            vmask=torch.as_tensor(new_vmask),
             nverts=torch.as_tensor(s["nverts"]),
         )
 

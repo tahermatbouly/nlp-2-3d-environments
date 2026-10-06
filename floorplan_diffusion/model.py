@@ -148,13 +148,11 @@ class FloorplanDenoiser(nn.Module):
                                      for _ in range(cfg.denoiser_layers)])
         self.out_norm = nn.LayerNorm(d)
         self.out = nn.Linear(d, D)
-        # vertex-count prediction head (§6): classes 0..V, only 3..V are valid
-        self.count_head = nn.Sequential(nn.Linear(d, d), nn.GELU(), nn.Linear(d, cfg.max_vertices + 1))
 
     # -- conditioning ---------------------------------------------------------
-    def encode(self, room_type, area_feat, adj, room_mask) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def encode(self, room_type, area_feat, adj, room_mask) -> Tuple[torch.Tensor, torch.Tensor]:
         room_h, glob_h = self.graph(room_type, area_feat, adj, room_mask)
-        return room_h, glob_h, self.count_head(room_h)
+        return room_h, glob_h
 
     # -- denoise --------------------------------------------------------------
     def denoise(self, x_t, t, room_h, glob_h, room_mask, tok_mask):
