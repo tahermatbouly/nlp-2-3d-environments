@@ -89,7 +89,7 @@ def validate(model, loader, tc, device, aux_scale):
             b = {k: v.to(device) for k, v in b.items()}
             out = model.training_losses(b, tc, aux_scale=aux_scale)
             for k, v in out.items():
-                totals[k] = totals.get(k, 0.0) + float(v)
+                totals[k] = totals.get(k, 0.0) + (v.item() if hasattr(v, 'item') else float(v))
             n += 1
     return {k: v / max(n, 1) for k, v in totals.items()}
 
