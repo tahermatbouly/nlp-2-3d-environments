@@ -91,10 +91,10 @@ def evaluate_model(model, samples: List[Dict[str, Any]], K: int = 8, steps: int 
             geometric_validity_pct=100 * float(np.mean([c["polygons_ok"] and c["overlap_ok"] for c in ck])),
         ))
         r = room_level(top, s)
-        rooms.append({k: float(np.nanmean(v)) if len(v) else np.nan for k, v in r.items()})
+        rooms.append({k: float(np.nanmean(v)) if len(v) and not np.isnan(v).all() else np.nan for k, v in r.items()})
         # best-of-K by mean IoU (reference similarity only; many valid layouts exist per graph)
         best = max((room_level(c, s) for c in cands), key=lambda d: np.mean(d["iou"]))
-        rooms_best.append({k: float(np.nanmean(v)) if len(v) else np.nan for k, v in best.items()})
+        rooms_best.append({k: float(np.nanmean(v)) if len(v) and not np.isnan(v).all() else np.nan for k, v in best.items()})
     return dict(floorplan=summarise(floor),
                 room_top1=summarise(rooms),
                 room_best_of_k=summarise(rooms_best),

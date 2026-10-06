@@ -19,6 +19,11 @@ from dataclasses import asdict
 
 import numpy as np
 import torch
+
+# Enable TF32 for Ampere GPUs (RTX 30-series / A100)
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
 from torch.utils.data import DataLoader
 from rich.console import Console
 from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn, MofNCompleteColumn
@@ -112,7 +117,15 @@ def main():
 
     model = FloorplanDiffusion(mc, S).to(device)
     console.print(f"[bold cyan][train][/bold cyan] parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
-    opt = torch.optim.AdamW(model.parameters(), lr=tc.lr, weight_decay=tc.weight_decay, betas=(0.9, 0.99))
+    
+    if getattr(tc, "compile", False) and hasattr(torch, "compile"):
+        console.print("[yellow]Compiling model with torch.compile() (this may take a minute on the first step)...[/yellow]")
+        model = torch.compile(model)
+
+    try:
+        opt = torch.optim.AdamW(model.parameters(), lr=tc.lr, weight_decay=tc.weight_decay, betas=(0.9, 0.99), fused=device.startswith("cuda"))
+    except TypeError:
+        opt = torch.optim.AdamW(model.parameters(), lr=tc.lr, weight_decay=tc.weight_decay, betas=(0.9, 0.99))
     ema = EMA(model, tc.ema_decay)
     use_amp = tc.amp and device.startswith("cuda")
     amp_dtype = torch.bfloat16 if use_amp and torch.cuda.is_bf16_supported() else torch.float16
@@ -169,7 +182,7 @@ def main():
                 step += 1
                 cnt += 1
                 for k, v in out.items():
-                    run[k] = run.get(k, 0.0) + float(v)
+                    run[k] = run.get(k, 0.0) + (v.item() if hasattr(v, 'item') else float(v))
                 progress.advance(batch_task)
                 if a.max_steps and step >= a.max_steps:
                     break
