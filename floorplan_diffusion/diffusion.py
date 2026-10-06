@@ -91,7 +91,8 @@ class FloorplanDiffusion(nn.Module):
             terms = aux_losses(P, vm, rmask[idx], batch["area"][idx], batch["adj"][idx], exempt=exempt)
             sw = self.alpha_bar[t[idx]]                           # signal weight in [0,1]
             weights = dict(area=tc.w_area, valid=tc.w_valid, overlap=tc.w_overlap,
-                           conn=tc.w_conn, nonconn=tc.w_nonconn)
+                           conn=tc.w_conn, nonconn=tc.w_nonconn,
+                           ortho=getattr(tc, 'w_ortho', 0.5), gap=getattr(tc, 'w_gap', 0.5))
             aux = 0.0
             for name, val in terms.items():
                 v = (val * sw).mean()

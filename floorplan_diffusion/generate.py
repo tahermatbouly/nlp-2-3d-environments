@@ -169,6 +169,9 @@ def build_candidate(G_in: nx.Graph, rings: List[np.ndarray]) -> Candidate:
 
 def to_plan_dict(cand: Candidate, plan_id: int = -1) -> Dict[str, Any]:
     """ResPlan-style plan dict so ``resplan_utils.plot_plan_and_graph`` can draw it."""
+    from shapely.ops import nearest_points
+    from shapely.geometry import Point
+    
     plan: Dict[str, Any] = {"id": plan_id, "graph": cand.graph}
     for t in ROOM_TYPES:
         geoms = [d["geometry"] for _, d in cand.graph.nodes(data=True)
@@ -177,9 +180,35 @@ def to_plan_dict(cand: Candidate, plan_id: int = -1) -> Dict[str, Any]:
             geoms = [g if g.is_valid else make_valid(g) for g in geoms]   # plotting only
             u = unary_union(geoms)
             plan[t] = u if isinstance(u, MultiPolygon) else MultiPolygon([u]) if isinstance(u, Polygon) else u
+            
+    # Procedural Doors
+    doors = []
+    for u, v, data in cand.graph.edges(data=True):
+        if data.get("type") == "via_door":
+            g_u = cand.graph.nodes[u].get("geometry")
+            g_v = cand.graph.nodes[v].get("geometry")
+            if g_u and g_v and not g_u.is_empty and not g_v.is_empty:
+                try:
+                    p_u, p_v = nearest_points(g_u, g_v)
+                    midpt = Point((p_u.x + p_v.x) / 2, (p_u.y + p_v.y) / 2)
+                    doors.append(midpt.buffer(2.0, cap_style=3))
+                except Exception:
+                    pass
+    if doors:
+        plan["door"] = unary_union(doors)
+            
+    # Procedural Walls and Inner boundary
     allg = [d["geometry"] for _, d in cand.graph.nodes(data=True) if not d["geometry"].is_empty]
     if allg:
-        plan["inner"] = unary_union([g if g.is_valid else make_valid(g) for g in allg])
+        inner = unary_union([g if g.is_valid else make_valid(g) for g in allg])
+        plan["inner"] = inner
+        try:
+            wall = inner.buffer(1.5, join_style=2).difference(inner.buffer(-0.5))
+            if not wall.is_empty:
+                plan["wall"] = wall
+        except Exception:
+            pass
+            
     return plan
 
 
@@ -190,7 +219,8 @@ def to_plan_dict(cand: Candidate, plan_id: int = -1) -> Dict[str, Any]:
 @torch.no_grad()
 def generate_floorplans(model, graphs: List[nx.Graph], K: int = 8, steps: int = 50, eta: float = 0.0,
                         device: str = "cpu", seed: int = 0, batch_size: int = 32,
-                        sample_counts: bool = False, drop_invalid: bool = False) -> List[List[Candidate]]:
+                        sample_counts: bool = False, drop_invalid: bool = False,
+                        snap_grid: float = 2.0) -> List[List[Candidate]]:
     """For every input graph draw K samples, validate and rank them (best first).
 
     ``drop_invalid=True`` rejects candidates that violate the constraints (§22);
@@ -212,6 +242,8 @@ def generate_floorplans(model, graphs: List[nx.Graph], K: int = 8, steps: int = 
             rings = []
             for i in range(n):
                 r = P[b, i][vm[b, i]]
+                if snap_grid > 0:
+                    r = np.round(r / snap_grid) * snap_grid
                 rings.append(clean_ring(r) if len(r) >= 3 else r)
             results[gi].append(build_candidate(G, rings))
     for gi in range(len(results)):
