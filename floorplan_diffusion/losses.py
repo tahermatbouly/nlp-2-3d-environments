@@ -78,11 +78,16 @@ def validity_loss(P, vmask, rmask, target_area):
     Q = _succ(P, vmask)
     a_i, b_i = P[:, :, :, None], Q[:, :, :, None]       # edge i
     a_j, b_j = P[:, :, None, :], Q[:, :, None, :]       # edge j
+    
+    len_i = torch.sqrt(((b_i - a_i)**2).sum(-1) + 1e-6)
+    len_j = torch.sqrt(((b_j - a_j)**2).sum(-1) + 1e-6)
+
     s1 = torch.tanh(_orient(a_i, b_i, a_j))
     s2 = torch.tanh(_orient(a_i, b_i, b_j))
     s3 = torch.tanh(_orient(a_j, b_j, a_i))
     s4 = torch.tanh(_orient(a_j, b_j, b_i))
     cross = F.relu(-s1 * s2) * F.relu(-s3 * s4)          # [B,N,V,V]
+    cross = cross * len_i * len_j
     n = vmask.sum(-1)[:, :, None, None]
     ii = torch.arange(V, device=P.device)
     di = (ii[:, None] - ii[None, :]).abs()
@@ -175,7 +180,8 @@ def ortho_loss(P, vmask, rmask):
     edge = (Q - P).abs()
     length = torch.sqrt((edge * edge).sum(-1) + 1e-6)
     ortho = torch.minimum(edge[..., 0], edge[..., 1]) / (length + 1e-3)
-    ortho = (ortho * vmask).sum(-1) / vmask.sum(-1).clamp(min=1)
+    ortho = ortho * length * vmask
+    ortho = ortho.sum(-1) / (length * vmask).sum(-1).clamp(min=1.0)
     return (ortho * rmask).sum(-1) / rmask.sum(-1).clamp(min=1)
 
 

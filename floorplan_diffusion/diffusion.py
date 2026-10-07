@@ -81,6 +81,10 @@ class FloorplanDiffusion(nn.Module):
             k = min(aux_samples, B)
             idx = torch.argsort(t)[:k]
             P, vm = self.to_polygons(x0_hat[idx].float(), tok[idx])
+            if self.cfg.mode != "rect":
+                V = P.shape[-2]
+                real_vm = torch.arange(V, device=P.device)[None, None, :] < batch["nverts"][idx].unsqueeze(-1)
+                vm = vm & real_vm
             vm = vm & rmask[idx].unsqueeze(-1)
             exempt = batch["room_type"][idx] == ROOM_TYPE_TO_ID["front_door"]
             terms = aux_losses(P, vm, rmask[idx], batch["area"][idx], batch["adj"][idx], exempt=exempt)

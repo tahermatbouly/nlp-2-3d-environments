@@ -52,9 +52,9 @@ def clean_ring(coords: np.ndarray, tol: float = COLLINEAR_TOL) -> np.ndarray:
     # duplicates (consecutive, including wrap-around)
     dedup = []
     for p in pts:
-        if not dedup or np.hypot(p[0] - dedup[-1][0], p[1] - dedup[-1][1]) > 1e-9:
+        if not dedup or np.hypot(p[0] - dedup[-1][0], p[1] - dedup[-1][1]) > 0.5:
             dedup.append(p)
-    while len(dedup) > 1 and np.hypot(dedup[0][0] - dedup[-1][0], dedup[0][1] - dedup[-1][1]) <= 1e-9:
+    while len(dedup) > 1 and np.hypot(dedup[0][0] - dedup[-1][0], dedup[0][1] - dedup[-1][1]) <= 0.5:
         dedup.pop()
     pts = dedup
     changed = True
