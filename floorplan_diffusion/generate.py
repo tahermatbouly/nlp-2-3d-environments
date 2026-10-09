@@ -153,6 +153,69 @@ def build_candidate(G_in: nx.Graph, rings: List[np.ndarray]) -> Candidate:
         y0 = min(p.bounds[1] for p in good)
         from shapely import affinity
         polys = [affinity.translate(p, 8 - x0, 8 - y0) if p is not None else None for p in polys]
+
+    # --- NEW: SHAPELY POST-PROCESSING ALGORITHM ---
+    from shapely.validation import make_valid
+    
+    def _extract_poly(geom):
+        if geom is None or geom.is_empty:
+            return None
+        if not geom.is_valid:
+            geom = make_valid(geom)
+        if geom.geom_type == 'Polygon':
+            return geom
+        if geom.geom_type == 'MultiPolygon':
+            return max(geom.geoms, key=lambda g: g.area)
+        if geom.geom_type == 'GeometryCollection':
+            polys_only = [g for g in geom.geoms if g.geom_type in ('Polygon', 'MultiPolygon')]
+            if polys_only:
+                best = max(polys_only, key=lambda g: g.area)
+                if best.geom_type == 'MultiPolygon':
+                    return max(best.geoms, key=lambda g: g.area)
+                return best
+        return None
+
+    # 1. Repair invalid polygons
+    fixed_polys = [_extract_poly(p) for p in polys]
+        
+    # 2. Resolve Overlaps (Fair Clipping)
+    node_names = list(G_in.nodes)
+    req_areas = [G_in.nodes[n]["area"] for n in node_names]
+    from .config import OVERLAP_EXEMPT_TYPES
+    for i in range(len(fixed_polys)):
+        for j in range(i + 1, len(fixed_polys)):
+            p1, p2 = fixed_polys[i], fixed_polys[j]
+            if p1 is None or p2 is None: continue
+            
+            t1 = G_in.nodes[node_names[i]]["type"]
+            t2 = G_in.nodes[node_names[j]]["type"]
+            if t1 in OVERLAP_EXEMPT_TYPES or t2 in OVERLAP_EXEMPT_TYPES:
+                continue
+                
+            if p1.intersects(p2):
+                inter = p1.intersection(p2)
+                if inter.area > 0.1:
+                    rel1 = p1.area / req_areas[i] if req_areas[i] > 0 else 1.0
+                    rel2 = p2.area / req_areas[j] if req_areas[j] > 0 else 1.0
+                    
+                    if rel1 > rel2:
+                        # p1 has more surplus, try subtracting from p1
+                        diff = _extract_poly(p1.difference(inter))
+                        if diff is not None and diff.area > 1.0:
+                            fixed_polys[i] = diff
+                        else:
+                            fixed_polys[j] = _extract_poly(p2.difference(inter))
+                    else:
+                        # p2 has more surplus, try subtracting from p2
+                        diff = _extract_poly(p2.difference(inter))
+                        if diff is not None and diff.area > 1.0:
+                            fixed_polys[j] = diff
+                        else:
+                            fixed_polys[i] = _extract_poly(p1.difference(inter))
+    
+    polys = fixed_polys
+    # ----------------------------------------------
+
     checks = check_polygons(G_in, polys)
     out = nx.Graph()
     for (n, d), p in zip(G_in.nodes(data=True), polys):
