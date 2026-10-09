@@ -28,7 +28,9 @@ python -m floorplan_diffusion.train \
     --out_dir checkpoints/smoke_phase3 \
     --max_steps 5 \
     --aux_start_epoch 0 \
-    --aux_ramp_epochs 0
+    --aux_ramp_epochs 0 \
+    --w_overlap 10.0 \
+    --w_valid 5.0
 
 # Phase 4 & 5: Evaluate the final model on the test set
 echo "--- [4/4] Running Evaluation ---"
@@ -37,7 +39,7 @@ python -m floorplan_diffusion.evaluate \
     --split test \
     --k 2 \
     --n 2 \
-    --guidance 5.0 \
+    --guidance 0.0 \
     --steps 5
 
 echo "Smoke Test complete!"

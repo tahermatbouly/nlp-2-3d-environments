@@ -30,17 +30,17 @@ python -m floorplan_diffusion.train \
     --out_dir checkpoints/phase3 \
     --epochs 200 \
     --aux_start_epoch 0 \
-    --aux_ramp_epochs 0
+    --aux_ramp_epochs 0 \
+    --w_overlap 10.0 \
+    --w_valid 5.0
 
 # Phase 4 & 5: Evaluate the final model on the test set
-# FIX 2: We apply a strong geometric guidance scale during inference to actively 
-# push overlapping rooms apart using gradient optimization at each diffusion step.
 echo "--- [4/4] Running Evaluation ---"
 python -m floorplan_diffusion.evaluate \
     --ckpt checkpoints/phase3/best.pt \
     --split test \
     --k 16 \
-    --guidance 5.0 \
+    --guidance 0.0 \
     --steps 50
 
 echo "Pipeline complete!"
