@@ -301,7 +301,14 @@ def to_plan_dict(cand: Candidate, plan_id: int = -1) -> Dict[str, Any]:
         inner = unary_union([g if g.is_valid else make_valid(g) for g in allg])
         plan["inner"] = inner
         try:
-            wall = inner.buffer(1.5, join_style=2).difference(inner.buffer(-0.5))
+            # Create walls along all boundaries (interior + exterior)
+            boundaries = unary_union([g.boundary for g in allg if g.is_valid])
+            wall = boundaries.buffer(1.5, cap_style=2, join_style=2)
+            
+            # Subtract doors from the wall to create clear openings
+            if "door" in plan and not plan["door"].is_empty:
+                wall = wall.difference(plan["door"])
+                
             if not wall.is_empty:
                 plan["wall"] = wall
         except Exception:

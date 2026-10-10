@@ -1,35 +1,39 @@
 ## Goal Description
-The diffusion model currently generates realistic floorplans, but some rooms exhibit triangular or highly skewed shapes that are not realistic for real-world (Manhattan-world) buildings. The goal is to enforce strict orthogonality (axis-aligned horizontal and vertical edges) on the generated room polygons, even if it requires additional compute (making the model "heavier").
+Currently, the generated floorplans display rooms directly touching each other, with the `wall` layer only tracing the exterior hull of the building. This makes it hard to visually distinguish individual rooms and see the doors connecting them. The goal is to generate clear interior walls separating all rooms and cut out clear openings for the procedural doors.
 
 ## Proposed Changes
 
-We will introduce a **Test-Time Optimization (TTO)** mechanism coupled with an **Orthogonalization Post-Processing** step. This avoids having to retrain the entire diffusion model from scratch (which would take hours) while mathematically guaranteeing orthogonal outputs. 
+### `floorplan_diffusion/generate.py`
+We will modify the `to_plan_dict` function, which is responsible for converting the raw model outputs into the final drawable layers:
+1. **Interior Walls**: Instead of buffering only the `unary_union` (which dissolves internal boundaries), we will extract the `boundary` of every individual room and buffer them by `1.5` units. This creates a solid wall network separating every room.
+2. **Door Openings**: We will subtract the procedural `door` geometries from this new wall network. Since the walls are 3.0 units thick (1.5 on each side) and the doors are 4.0 units thick, subtracting the doors will create clean, realistic gaps in the walls.
 
-### 1. Enable and Enhance Classifier-Free Guidance (`diffusion.py`)
-The model already has a `_guide` function that uses gradients from auxiliary losses to shape the output during sampling. However, the orthogonal loss (`ortho_loss`) is currently missing from the guidance weights, and guidance is disabled by default.
-- We will add `ortho=10.0` to the guidance weights in `_guide`.
-- This step makes the model significantly "heavier" at inference time, as it unrolls gradient descent steps through the denoiser at each timestep to actively penalize non-orthogonal edges.
-
-### 2. Active Contour Refinement (`generate.py`)
-Even with guidance, the raw output might have slight imperfections before being converted to Shapely polygons. We will introduce a differentiable refinement step directly in `generate.py`:
-- Before passing the coordinates to Shapely, we will instantiate a small Adam optimizer that runs for ~100 iterations on the raw coordinates.
-- It will explicitly minimize a combined loss: `ortho_loss` (to square the edges) + `area_loss` (to prevent the polygon from collapsing into a line, a known failure mode of pure ortho_loss) + `validity_loss` (to prevent self-intersections).
-
-### 3. Final Orthogonal Snapping (`generate.py`)
-To mathematically guarantee that no triangular shapes remain, we will add a `force_orthogonal_polygon(poly)` function to the Shapely post-processing pipeline. 
-- This function will extract the vertices of the heavily refined polygons and snap the sequence of edges to perfectly alternate between horizontal (Y=constant) and vertical (X=constant). 
-- Since the TTO step will have already pushed the polygon to be ~99% orthogonal, this final snap will be a micro-adjustment that guarantees 100% realism without distorting the area or topology.
+#### [MODIFY] floorplan_diffusion/generate.py
+```python
+    # Procedural Walls and Inner boundary
+    allg = [d["geometry"] for _, d in cand.graph.nodes(data=True) if not d["geometry"].is_empty]
+    if allg:
+        inner = unary_union([g if g.is_valid else make_valid(g) for g in allg])
+        plan["inner"] = inner
+        try:
+            # Create walls along all boundaries (interior + exterior)
+            boundaries = unary_union([g.boundary for g in allg if g.is_valid])
+            wall = boundaries.buffer(1.5, cap_style=2, join_style=2)
+            
+            # Subtract doors from the wall to create clear openings
+            if "door" in plan and not plan["door"].is_empty:
+                wall = wall.difference(plan["door"])
+                
+            if not wall.is_empty:
+                plan["wall"] = wall
+        except Exception:
+            pass
+```
 
 ## User Review Required
 > [!IMPORTANT]
-> The addition of Test-Time Optimization (TTO) and enhanced guidance will significantly increase the inference time (making generation slower/heavier). However, it will mathematically guarantee the removal of triangular shapes without requiring a full model retraining. Do you approve of increasing inference time to achieve this?
+> The walls will now have a thickness of 3.0 canvas units (1.5 on each side of the boundary). Procedural doors will carve 4.0-unit gaps through them. This will make the visual output match standard architectural styles. Do you approve these changes?
 
 ## Verification Plan
-### Automated Tests
-Run the evaluation script on a small batch of test plans to verify that the generated images no longer contain triangular shapes and the `csr` (validity) metrics remain high:
-```bash
-python -m floorplan_diffusion.evaluate --ckpt checkpoints/phase3/best.pt --split test --k 16 --guidance 2.0 --steps 50 --plot 10 --n 10
-```
-
 ### Manual Verification
-The user should visually inspect the output images in `checkpoints/phase3/plots/` to confirm that the generated floorplans are strictly orthogonal and realistic.
+After implementation, the user can run `python inference.py --ckpt checkpoints/phase3/best.pt --guidance 2.0 --out inference_out.png` and visually verify that `inference_out.png` displays thick yellow interior walls separating the rooms, with clean pink doors cutting through them.
