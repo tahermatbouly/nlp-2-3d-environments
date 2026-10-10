@@ -91,7 +91,7 @@ class FloorplanDiffusion(nn.Module):
             sw = self.alpha_bar[t[idx]]                           # signal weight in [0,1]
             weights = dict(area=tc.w_area, valid=tc.w_valid, overlap=tc.w_overlap,
                            conn=tc.w_conn, nonconn=tc.w_nonconn,
-                           ortho=tc.w_ortho)
+                           ortho=tc.w_ortho, aspect=tc.w_aspect)
             aux = 0.0
             for name, val in terms.items():
                 v = (val * sw).mean()
@@ -121,7 +121,11 @@ class FloorplanDiffusion(nn.Module):
             counts = torch.full((B, N), 4, device=dev, dtype=torch.long)
             tok = rmask[:, :, None].clone()
         else:
+            from .config import ROOM_TYPE_TO_ID
             counts = torch.full((B, N), self.cfg.max_vertices, device=dev, dtype=torch.long)
+            # Enforce exactly 4 vertices for non-living rooms
+            is_living = batch["room_type"] == ROOM_TYPE_TO_ID["living"]
+            counts = torch.where(is_living, counts, torch.full_like(counts, 4))
             tok = (torch.arange(K, device=dev)[None, None] < counts.unsqueeze(-1)) & rmask[:, :, None]
 
         x = torch.randn(B, N, K, D, device=dev, generator=generator) * tok.unsqueeze(-1)
@@ -151,7 +155,7 @@ class FloorplanDiffusion(nn.Module):
     def _guide(self, x0, tok, batch, scale, iters):
         rmask = batch["room_mask"]
         exempt = batch["room_type"] == ROOM_TYPE_TO_ID["front_door"]
-        w = dict(overlap=2.0, conn=1.0, nonconn=0.5, area=1.0, valid=0.5, ortho=10.0)
+        w = dict(overlap=2.0, conn=1.0, nonconn=0.5, area=1.0, valid=0.5, ortho=10.0, aspect=5.0)
         for _ in range(iters):
             x = x0.detach().requires_grad_(True)
             P, vm = self.to_polygons(x, tok)

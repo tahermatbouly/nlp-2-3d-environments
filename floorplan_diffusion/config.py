@@ -93,6 +93,7 @@ class TrainConfig:
     w_conn: float = 1.0
     w_nonconn: float = 0.5
     w_ortho: float = 0.5
+    w_aspect: float = 0.5
     amp: bool = True
     num_workers: int = 4
     seed: int = 0

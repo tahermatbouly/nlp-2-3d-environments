@@ -185,6 +185,18 @@ def ortho_loss(P, vmask, rmask):
     return (ortho * rmask).sum(-1) / rmask.sum(-1).clamp(min=1)
 
 
+def aspect_ratio_loss(P, vmask, rmask, max_ratio=3.0):
+    """Penalizes bounding box aspect ratios that exceed max_ratio."""
+    big = 1e6
+    lo = torch.where(vmask.unsqueeze(-1), P, torch.full_like(P, big)).amin(dim=-2)
+    hi = torch.where(vmask.unsqueeze(-1), P, torch.full_like(P, -big)).amax(dim=-2)
+    w = (hi[..., 0] - lo[..., 0]).clamp(min=1.0)
+    h = (hi[..., 1] - lo[..., 1]).clamp(min=1.0)
+    ratio = torch.maximum(w / h, h / w)
+    penalty = F.relu(ratio - max_ratio)
+    return (penalty * rmask).sum(-1) / rmask.sum(-1).clamp(min=1)
+
+
 def aux_losses(P, vmask, rmask, target_area, adj, exempt=None, overlap_grid=64) -> Dict[str, torch.Tensor]:
     # NOTE: a "strict gap" loss (pull connected rooms to distance 0) was removed: ground-truth
     # rooms are separated by ~2.5-unit walls, so it penalised the real data. `conn` already
@@ -194,4 +206,5 @@ def aux_losses(P, vmask, rmask, target_area, adj, exempt=None, overlap_grid=64) 
                 valid=validity_loss(P, vmask, rmask, target_area),
                 overlap=overlap_loss(P, vmask, rmask, exempt=exempt, grid=overlap_grid),
                 conn=conn, nonconn=nonc,
-                ortho=ortho_loss(P, vmask, rmask))
+                ortho=ortho_loss(P, vmask, rmask),
+                aspect=aspect_ratio_loss(P, vmask, rmask))

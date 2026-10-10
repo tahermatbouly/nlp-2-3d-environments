@@ -1,39 +1,26 @@
 ## Goal Description
-Currently, the generated floorplans display rooms directly touching each other, with the `wall` layer only tracing the exterior hull of the building. This makes it hard to visually distinguish individual rooms and see the doors connecting them. The goal is to generate clear interior walls separating all rooms and cut out clear openings for the procedural doors.
+The user requested three specific constraints to improve floorplan realism:
+1. Ensure all outer rooms (rooms other than the "living" room) are perfectly rectangular (exactly 4 corners).
+2. Ensure rooms are not excessively elongated (aspect ratio limit).
+3. Set a strict lower bound on room area to prevent unrealistically small rooms.
 
 ## Proposed Changes
 
-### `floorplan_diffusion/generate.py`
-We will modify the `to_plan_dict` function, which is responsible for converting the raw model outputs into the final drawable layers:
-1. **Interior Walls**: Instead of buffering only the `unary_union` (which dissolves internal boundaries), we will extract the `boundary` of every individual room and buffer them by `1.5` units. This creates a solid wall network separating every room.
-2. **Door Openings**: We will subtract the procedural `door` geometries from this new wall network. Since the walls are 3.0 units thick (1.5 on each side) and the doors are 4.0 units thick, subtracting the doors will create clean, realistic gaps in the walls.
+### `floorplan_diffusion/diffusion.py`
+1. **Four Corners Constraint**: In the `sample` function, we intercepted the token count mask. If the room is not a living room, we force the mask to have exactly `4` vertices. Because our pipeline already orthogonalizes the shapes, a 4-vertex orthogonal polygon is mathematically guaranteed to be a perfect rectangle.
+2. **Aspect Ratio Weight**: Added a new weight configuration `w_aspect` to correctly pass aspect ratio penalties through the `_guide` step.
 
-#### [MODIFY] floorplan_diffusion/generate.py
-```python
-    # Procedural Walls and Inner boundary
-    allg = [d["geometry"] for _, d in cand.graph.nodes(data=True) if not d["geometry"].is_empty]
-    if allg:
-        inner = unary_union([g if g.is_valid else make_valid(g) for g in allg])
-        plan["inner"] = inner
-        try:
-            # Create walls along all boundaries (interior + exterior)
-            boundaries = unary_union([g.boundary for g in allg if g.is_valid])
-            wall = boundaries.buffer(1.5, cap_style=2, join_style=2)
-            
-            # Subtract doors from the wall to create clear openings
-            if "door" in plan and not plan["door"].is_empty:
-                wall = wall.difference(plan["door"])
-                
-            if not wall.is_empty:
-                plan["wall"] = wall
-        except Exception:
-            pass
-```
+### `floorplan_diffusion/losses.py`
+1. **Aspect Ratio Penalty**: Added a new differentiable `aspect_ratio_loss` function that computes the bounding box aspect ratio of each room. It heavily penalizes shapes where the ratio of the longest to shortest side exceeds `3.0`. We added this penalty to the global `aux_losses` dictionary.
+
+### `floorplan_diffusion/generate.py`
+1. **Minimum Area Clamp**: Right after constructing the batch for sampling, we clamp the target `area` of every room to a minimum of `20.0` units. This forcibly conditions the network (and the downstream Test-Time Optimization) to expand tiny rooms up to a realistic size limit.
+2. **Aspect Ratio Refinement**: Added the `aspect_ratio_loss` to the Active Contour TTO loop with a strong weight (`5.0`), dynamically reshaping elongated rectangles into squarer proportions during inference.
 
 ## User Review Required
 > [!IMPORTANT]
-> The walls will now have a thickness of 3.0 canvas units (1.5 on each side of the boundary). Procedural doors will carve 4.0-unit gaps through them. This will make the visual output match standard architectural styles. Do you approve these changes?
+> The minimum area limit is now hardcoded to `20.0` squared units, and the maximum aspect ratio is set to `3.0`. By forcing outer rooms to have exactly 4 vertices, their complexity will be significantly reduced, but they are guaranteed to be perfect rectangles. Are you okay with these specific limit values?
 
 ## Verification Plan
 ### Manual Verification
-After implementation, the user can run `python inference.py --ckpt checkpoints/phase3/best.pt --guidance 2.0 --out inference_out.png` and visually verify that `inference_out.png` displays thick yellow interior walls separating the rooms, with clean pink doors cutting through them.
+After implementation, you can run `python inference.py --ckpt checkpoints/smoke_phase3/best.pt --guidance 2.0 --device cpu` and verify that the generated `inference_out.png` shows perfect rectangles for non-living rooms, no extremely thin corridors, and no tiny unreadable rooms.

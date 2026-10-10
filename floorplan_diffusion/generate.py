@@ -366,13 +366,16 @@ def generate_floorplans(model, graphs: List[nx.Graph], K: int = 8, steps: int = 
         chunk = flat[s:s + batch_size]
         batch = graph_batch([G for _, G in chunk], model.S)
         batch = {k: v.to(device) for k, v in batch.items()}
+        # Enforce minimum room area limit
+        batch["area"] = batch["area"].clamp(min=20.0)
+        
         out = model.sample(batch, steps=steps, eta=eta, sample_counts=sample_counts, generator=gen,
                            guidance=guidance, guide_start=guide_start, guide_iters=guide_iters)
         P, vm = model.to_polygons(out["x"], out["tok_mask"])
 
         # --- NEW: ACTIVE CONTOUR TTO ---
         with torch.enable_grad():
-            from .losses import ortho_loss, area_loss, validity_loss
+            from .losses import ortho_loss, area_loss, validity_loss, aspect_ratio_loss
             P_opt = P.detach().clone()
             P_opt.requires_grad = True
             opt = torch.optim.Adam([P_opt], lr=0.5)
@@ -385,7 +388,8 @@ def generate_floorplans(model, graphs: List[nx.Graph], K: int = 8, steps: int = 
                 ol = ortho_loss(P_opt, vm_r, rmask).sum()
                 al = area_loss(P_opt, vm_r, rmask, target_area).sum()
                 vl = validity_loss(P_opt, vm_r, rmask, target_area).sum()
-                loss = 10.0 * ol + 1.0 * al + 1.0 * vl
+                aspl = aspect_ratio_loss(P_opt, vm_r, rmask, max_ratio=3.0).sum()
+                loss = 10.0 * ol + 1.0 * al + 1.0 * vl + 5.0 * aspl
                 loss.backward()
                 opt.step()
             P = P_opt.detach()
