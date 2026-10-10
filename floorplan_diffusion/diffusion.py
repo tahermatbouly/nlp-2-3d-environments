@@ -151,7 +151,7 @@ class FloorplanDiffusion(nn.Module):
     def _guide(self, x0, tok, batch, scale, iters):
         rmask = batch["room_mask"]
         exempt = batch["room_type"] == ROOM_TYPE_TO_ID["front_door"]
-        w = dict(overlap=2.0, conn=1.0, nonconn=0.5, area=1.0, valid=0.5)
+        w = dict(overlap=2.0, conn=1.0, nonconn=0.5, area=1.0, valid=0.5, ortho=10.0)
         for _ in range(iters):
             x = x0.detach().requires_grad_(True)
             P, vm = self.to_polygons(x, tok)

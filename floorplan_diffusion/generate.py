@@ -175,8 +175,43 @@ def build_candidate(G_in: nx.Graph, rings: List[np.ndarray]) -> Candidate:
                 return best
         return None
 
+    def force_orthogonal_polygon(poly):
+        if poly is None or poly.is_empty:
+            return poly
+        coords = list(poly.exterior.coords)
+        if len(coords) < 3:
+            return poly
+        
+        coords = coords[:-1]
+        new_coords = [list(coords[0])]
+        
+        for i in range(1, len(coords)):
+            prev = new_coords[-1]
+            curr = list(coords[i])
+            dx = abs(curr[0] - prev[0])
+            dy = abs(curr[1] - prev[1])
+            if dx < dy:
+                curr[0] = prev[0]
+            else:
+                curr[1] = prev[1]
+            if curr != prev:
+                new_coords.append(curr)
+                
+        last = new_coords[-1]
+        first = new_coords[0]
+        if last[0] != first[0] and last[1] != first[1]:
+            if abs(last[0] - first[0]) < abs(last[1] - first[1]):
+                new_coords.append([first[0], last[1]])
+            else:
+                new_coords.append([last[0], first[1]])
+                
+        try:
+            return Polygon(new_coords)
+        except Exception:
+            return poly
+
     # 1. Repair invalid polygons
-    fixed_polys = [_extract_poly(p) for p in polys]
+    fixed_polys = [_extract_poly(force_orthogonal_polygon(p)) for p in polys]
         
     # 2. Resolve Overlaps (Fair Clipping)
     node_names = list(G_in.nodes)
@@ -327,6 +362,27 @@ def generate_floorplans(model, graphs: List[nx.Graph], K: int = 8, steps: int = 
         out = model.sample(batch, steps=steps, eta=eta, sample_counts=sample_counts, generator=gen,
                            guidance=guidance, guide_start=guide_start, guide_iters=guide_iters)
         P, vm = model.to_polygons(out["x"], out["tok_mask"])
+
+        # --- NEW: ACTIVE CONTOUR TTO ---
+        with torch.enable_grad():
+            from .losses import ortho_loss, area_loss, validity_loss
+            P_opt = P.detach().clone()
+            P_opt.requires_grad = True
+            opt = torch.optim.Adam([P_opt], lr=0.5)
+            rmask = batch["room_mask"]
+            target_area = batch["area"]
+            vm_r = vm & rmask[..., None]
+            
+            for _ in range(100):
+                opt.zero_grad()
+                ol = ortho_loss(P_opt, vm_r, rmask).sum()
+                al = area_loss(P_opt, vm_r, rmask, target_area).sum()
+                vl = validity_loss(P_opt, vm_r, rmask, target_area).sum()
+                loss = 10.0 * ol + 1.0 * al + 1.0 * vl
+                loss.backward()
+                opt.step()
+            P = P_opt.detach()
+        # -------------------------------
         P, vm = P.cpu().numpy().astype(np.float64), vm.cpu().numpy()
         for b, (gi, G) in enumerate(chunk):
             n = len(G)
