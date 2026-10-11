@@ -45,7 +45,7 @@ OVERLAP_EXEMPT_TYPES = ("front_door",)
 MAX_EXTENT_FACTOR = 1.25       # balconies may poke out of the 256 canvas (GT extent up to ~302)
 AREA_REL_TOL = 0.30            # |A_pred - A_req| / A_req allowed
 OVERLAP_REL_TOL = 0.10         # pair overlap area / smaller room area allowed
-SCORE_WEIGHTS = dict(area=1.0, overlap=5.0, topology=2.0, invalid=10.0, compactness=0.5)
+SCORE_WEIGHTS = dict(area=3.0, overlap=6.0, topology=4.0, invalid=10.0, compactness=0.5)
 
 
 @dataclass
@@ -87,13 +87,13 @@ class TrainConfig:
     ema_decay: float = 0.999
     aux_start_epoch: int = 20       # phase 3: auxiliary losses ramp in after this epoch
     aux_ramp_epochs: int = 20
-    w_area: float = 1.0
+    w_area: float = 2.0
     w_valid: float = 1.0
-    w_overlap: float = 2.0
-    w_conn: float = 1.0
-    w_nonconn: float = 0.5
-    w_ortho: float = 0.5
-    w_aspect: float = 0.5
+    w_overlap: float = 3.0
+    w_conn: float = 2.0
+    w_nonconn: float = 1.0
+    w_ortho: float = 1.0
+    w_aspect: float = 1.0
     amp: bool = True
     num_workers: int = 4
     seed: int = 0

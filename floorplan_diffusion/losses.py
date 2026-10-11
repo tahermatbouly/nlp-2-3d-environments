@@ -94,6 +94,7 @@ def validity_loss(P, vmask, rmask, target_area):
     nonadj = (di > 1)[None, None] & ~(di[None, None] == (n - 1))
     valid = vmask[:, :, :, None] & vmask[:, :, None, :] & nonadj
     inter = (cross * valid).sum((-1, -2)) / 2.0           # [B,N]
+    inter = inter / target_area.clamp(min=1.0)
     inter = (inter * rmask).sum(-1) / rmask.sum(-1).clamp(min=1)
     return degenerate + inter
 

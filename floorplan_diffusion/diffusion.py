@@ -123,9 +123,9 @@ class FloorplanDiffusion(nn.Module):
         else:
             from .config import ROOM_TYPE_TO_ID
             counts = torch.full((B, N), self.cfg.max_vertices, device=dev, dtype=torch.long)
-            # Enforce exactly 4 vertices for non-living rooms
+            # Living room: strictly 8 vertices (allowing 4, 6, 8 corners). Non-living: strictly 4 vertices (rectangles).
             is_living = batch["room_type"] == ROOM_TYPE_TO_ID["living"]
-            counts = torch.where(is_living, counts, torch.full_like(counts, 4))
+            counts = torch.where(is_living, torch.full_like(counts, 8), torch.full_like(counts, 4))
             tok = (torch.arange(K, device=dev)[None, None] < counts.unsqueeze(-1)) & rmask[:, :, None]
 
         x = torch.randn(B, N, K, D, device=dev, generator=generator) * tok.unsqueeze(-1)
@@ -155,7 +155,7 @@ class FloorplanDiffusion(nn.Module):
     def _guide(self, x0, tok, batch, scale, iters):
         rmask = batch["room_mask"]
         exempt = batch["room_type"] == ROOM_TYPE_TO_ID["front_door"]
-        w = dict(overlap=2.0, conn=1.0, nonconn=0.5, area=1.0, valid=0.5, ortho=10.0, aspect=5.0)
+        w = dict(overlap=5.0, conn=30.0, nonconn=10.0, area=6.0, valid=1.0, ortho=5.0, aspect=3.0)
         for _ in range(iters):
             x = x0.detach().requires_grad_(True)
             P, vm = self.to_polygons(x, tok)
@@ -178,5 +178,5 @@ def load_checkpoint(path: str, device: str = "cpu", use_ema: bool = True) -> "Fl
     ck = torch.load(path, map_location=device, weights_only=False)
     model = FloorplanDiffusion(ModelConfig(**ck["model_cfg"]), ck["S"]).to(device)
     sd = ck["ema"] if use_ema and ck.get("ema") else ck["model"]
-    model.load_state_dict(clean_state_dict(sd), strict=True)
+    model.load_state_dict(clean_state_dict(sd), strict=False)
     return model.eval()

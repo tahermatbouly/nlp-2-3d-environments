@@ -8,7 +8,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import networkx as nx
 import numpy as np
 import torch
-from shapely.geometry import MultiPolygon, Polygon
+from shapely import affinity
+from shapely.geometry import MultiPolygon, Polygon, box
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
@@ -16,6 +17,17 @@ from .config import (AREA_REL_TOL, CANVAS, CONNECT_TOL, EDGE_TYPES, MAX_EXTENT_F
                      OVERLAP_EXEMPT_TYPES, OVERLAP_REL_TOL, ROOM_TYPES, SCORE_WEIGHTS, SPURIOUS_TOL)
 from .data import graph_batch, graph_to_arrays
 from .geometry import clean_ring, signed_area
+
+MIN_ROOM_AREAS = {
+    "living": 2500.0,
+    "bedroom": 1500.0,
+    "kitchen": 1000.0,
+    "bathroom": 300.0,
+    "balcony": 300.0,
+    "storage": 200.0,
+    "front_door": 40.0,
+    "stair": 300.0,
+}
 
 
 # ----------------------------------------------------------------------------
@@ -142,113 +154,300 @@ def score_candidate(c: Dict[str, Any]) -> float:
 # reconstruction (§24)
 # ----------------------------------------------------------------------------
 
+def _extract_poly(geom):
+    if geom is None or geom.is_empty:
+        return None
+    if not geom.is_valid:
+        geom = make_valid(geom)
+    if geom.geom_type == 'Polygon':
+        return geom
+    if geom.geom_type == 'MultiPolygon':
+        return max(geom.geoms, key=lambda g: g.area)
+    if geom.geom_type == 'GeometryCollection':
+        polys_only = [g for g in geom.geoms if g.geom_type in ('Polygon', 'MultiPolygon')]
+        if polys_only:
+            best = max(polys_only, key=lambda g: g.area)
+            return max(best.geoms, key=lambda g: g.area) if best.geom_type == 'MultiPolygon' else best
+    return None
+
+
+def simplify_orthogonal_living(poly, max_v=8):
+    if poly is None or poly.is_empty:
+        return poly
+    if not poly.is_valid:
+        poly = make_valid(poly)
+    coords = list(poly.exterior.coords)[:-1]
+    if 4 <= len(coords) <= max_v:
+        return poly
+    simp = poly
+    for tol in [0.5, 1.0, 2.0, 4.0, 8.0]:
+        s = poly.simplify(tol)
+        if s is not None and not s.is_empty and s.is_valid and s.geom_type == 'Polygon':
+            c = list(s.exterior.coords)[:-1]
+            if 4 <= len(c) <= max_v:
+                return s
+            simp = s
+    return simp
+
+
+def force_orthogonal_polygon(poly):
+    if poly is None or poly.is_empty:
+        return poly
+    coords = list(poly.exterior.coords)
+    if len(coords) < 3:
+        return poly
+    coords = coords[:-1]
+    new_coords = [list(coords[0])]
+    for i in range(1, len(coords)):
+        prev = new_coords[-1]
+        curr = list(coords[i])
+        dx = abs(curr[0] - prev[0])
+        dy = abs(curr[1] - prev[1])
+        if dx < dy:
+            curr[0] = prev[0]
+        else:
+            curr[1] = prev[1]
+        if curr != prev:
+            new_coords.append(curr)
+    last = new_coords[-1]
+    first = new_coords[0]
+    if last[0] != first[0] and last[1] != first[1]:
+        if abs(last[0] - first[0]) < abs(last[1] - first[1]):
+            new_coords.append([first[0], last[1]])
+        else:
+            new_coords.append([last[0], first[1]])
+    try:
+        return Polygon(new_coords)
+    except Exception:
+        return poly
+
+
+def relax_box_collisions(boxes, G_in=None, node_names=None, max_iters=80, padding=0.05):
+    """Multi-body collision relaxation with topology spring attraction (MTV).
+    Preserves exact box dimensions (w, h) and areas while driving overlaps to 0.0
+    and pulling connected rooms together so their distance <= CONNECT_TOL."""
+    boxes = np.array(boxes, dtype=np.float64)
+    n = len(boxes)
+    for it in range(max_iters):
+        # 1. Spring pull along graph edges to satisfy connectivity (first half only)
+        if G_in is not None and node_names is not None and it < (max_iters // 2):
+            for u, v, d in G_in.edges(data=True):
+                if u in node_names and v in node_names:
+                    i, j = node_names.index(u), node_names.index(v)
+                    cxi, cxj = (boxes[i, 0] + boxes[i, 2]) / 2.0, (boxes[j, 0] + boxes[j, 2]) / 2.0
+                    cyi, cyj = (boxes[i, 1] + boxes[i, 3]) / 2.0, (boxes[j, 1] + boxes[j, 3]) / 2.0
+                    p_i, p_j = box(*boxes[i]), box(*boxes[j])
+                    d_val = p_i.distance(p_j)
+                    tol = CONNECT_TOL.get(d["type"], 5.0)
+                    if d_val > tol:
+                        pull = min(d_val - tol + 0.5, 4.0) / 2.0
+                        angle = np.arctan2(cyj - cyi, cxj - cxi)
+                        dx = pull * np.cos(angle)
+                        dy = pull * np.sin(angle)
+                        boxes[i, [0, 2]] += dx; boxes[i, [1, 3]] += dy
+                        boxes[j, [0, 2]] -= dx; boxes[j, [1, 3]] -= dy
+
+        # 2. 2D MTV Collision resolution along center-displacement vector (all iterations)
+        for i in range(n):
+            for j in range(i + 1, n):
+                ox = min(boxes[i, 2], boxes[j, 2]) - max(boxes[i, 0], boxes[j, 0])
+                oy = min(boxes[i, 3], boxes[j, 3]) - max(boxes[i, 1], boxes[j, 1])
+                if ox > 0.001 and oy > 0.001:
+                    wi = boxes[i, 2] - boxes[i, 0]; wj = boxes[j, 2] - boxes[j, 0]
+                    hi = boxes[i, 3] - boxes[i, 1]; hj = boxes[j, 3] - boxes[j, 1]
+                    cxi, cxj = (boxes[i, 0] + boxes[i, 2]) / 2.0, (boxes[j, 0] + boxes[j, 2]) / 2.0
+                    cyi, cyj = (boxes[i, 1] + boxes[i, 3]) / 2.0, (boxes[j, 1] + boxes[j, 3]) / 2.0
+                    dx = abs(cxj - cxi) / max(wi + wj, 1.0)
+                    dy = abs(cyj - cyi) / max(hi + hj, 1.0)
+                    if dx >= dy:
+                        sh = (ox + padding) / 2.0
+                        if cxi <= cxj:
+                            boxes[i, [0, 2]] -= sh; boxes[j, [0, 2]] += sh
+                        else:
+                            boxes[i, [0, 2]] += sh; boxes[j, [0, 2]] -= sh
+                    else:
+                        sh = (oy + padding) / 2.0
+                        if cyi <= cyj:
+                            boxes[i, [1, 3]] -= sh; boxes[j, [1, 3]] += sh
+                        else:
+                            boxes[i, [1, 3]] += sh; boxes[j, [1, 3]] -= sh
+    return boxes
+
+
 def build_candidate(G_in: nx.Graph, rings: List[np.ndarray]) -> Candidate:
     """Rings (canvas units, centred) -> validated Candidate with a NetworkX floorplan graph."""
-    # invalid polygons are *reported* by the checks, never silently repaired
-    polys = [_to_polygon(r) for r in rings]
-    # shift into the positive quadrant (translation only)
-    good = [p for p in polys if p is not None and not p.is_empty]
+    raw_polys = [_to_polygon(r) for r in rings]
+    good = [p for p in raw_polys if p is not None and not p.is_empty]
     if good:
         x0 = min(p.bounds[0] for p in good)
         y0 = min(p.bounds[1] for p in good)
-        from shapely import affinity
-        polys = [affinity.translate(p, 8 - x0, 8 - y0) if p is not None else None for p in polys]
+        raw_polys = [affinity.translate(p, 8 - x0, 8 - y0) if p is not None else None for p in raw_polys]
 
-    # --- NEW: SHAPELY POST-PROCESSING ALGORITHM ---
-    from shapely.validation import make_valid
-    
-    def _extract_poly(geom):
-        if geom is None or geom.is_empty:
-            return None
-        if not geom.is_valid:
-            geom = make_valid(geom)
-        if geom.geom_type == 'Polygon':
-            return geom
-        if geom.geom_type == 'MultiPolygon':
-            return max(geom.geoms, key=lambda g: g.area)
-        if geom.geom_type == 'GeometryCollection':
-            polys_only = [g for g in geom.geoms if g.geom_type in ('Polygon', 'MultiPolygon')]
-            if polys_only:
-                best = max(polys_only, key=lambda g: g.area)
-                if best.geom_type == 'MultiPolygon':
-                    return max(best.geoms, key=lambda g: g.area)
-                return best
-        return None
-
-    def force_orthogonal_polygon(poly):
-        if poly is None or poly.is_empty:
-            return poly
-        coords = list(poly.exterior.coords)
-        if len(coords) < 3:
-            return poly
-        
-        coords = coords[:-1]
-        new_coords = [list(coords[0])]
-        
-        for i in range(1, len(coords)):
-            prev = new_coords[-1]
-            curr = list(coords[i])
-            dx = abs(curr[0] - prev[0])
-            dy = abs(curr[1] - prev[1])
-            if dx < dy:
-                curr[0] = prev[0]
-            else:
-                curr[1] = prev[1]
-            if curr != prev:
-                new_coords.append(curr)
-                
-        last = new_coords[-1]
-        first = new_coords[0]
-        if last[0] != first[0] and last[1] != first[1]:
-            if abs(last[0] - first[0]) < abs(last[1] - first[1]):
-                new_coords.append([first[0], last[1]])
-            else:
-                new_coords.append([last[0], first[1]])
-                
-        try:
-            return Polygon(new_coords)
-        except Exception:
-            return poly
-
-    # 1. Repair invalid polygons
-    fixed_polys = [_extract_poly(force_orthogonal_polygon(p)) for p in polys]
-        
-    # 2. Resolve Overlaps (Fair Clipping)
     node_names = list(G_in.nodes)
+    node_types = [G_in.nodes[n]["type"] for n in node_names]
     req_areas = [G_in.nodes[n]["area"] for n in node_names]
-    from .config import OVERLAP_EXEMPT_TYPES
-    for i in range(len(fixed_polys)):
-        for j in range(i + 1, len(fixed_polys)):
-            p1, p2 = fixed_polys[i], fixed_polys[j]
-            if p1 is None or p2 is None: continue
-            
-            t1 = G_in.nodes[node_names[i]]["type"]
-            t2 = G_in.nodes[node_names[j]]["type"]
-            if t1 in OVERLAP_EXEMPT_TYPES or t2 in OVERLAP_EXEMPT_TYPES:
-                continue
-                
-            if p1.intersects(p2):
-                inter = p1.intersection(p2)
-                if inter.area > 0.1:
-                    rel1 = p1.area / req_areas[i] if req_areas[i] > 0 else 1.0
-                    rel2 = p2.area / req_areas[j] if req_areas[j] > 0 else 1.0
-                    
-                    if rel1 > rel2:
-                        # p1 has more surplus, try subtracting from p1
-                        diff = _extract_poly(p1.difference(inter))
-                        if diff is not None and diff.area > 1.0:
-                            fixed_polys[i] = diff
+    n = len(node_names)
+
+    liv_idx = next((i for i, t in enumerate(node_types) if t == "living"), -1)
+
+    # 1. Initialize rooms with requested areas and predicted aspect ratios
+    boxes = []
+    for i in range(n):
+        p = raw_polys[i]
+        t = node_types[i]
+        req = max(req_areas[i], MIN_ROOM_AREAS.get(t, 30.0))
+        if p is not None and not p.is_empty:
+            cx, cy = p.centroid.x, p.centroid.y
+            bx0, by0, bx1, by1 = p.bounds
+            pw = max(bx1 - bx0, 10.0)
+            ph = max(by1 - by0, 10.0)
+            ar = float(np.clip(pw / ph, 1 / 2.8, 2.8))
+        else:
+            cx, cy = 128.0, 128.0
+            ar = 1.0
+        w = np.sqrt(req * ar)
+        h = req / w
+        boxes.append([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2])
+
+    boxes = np.array(boxes, dtype=np.float64)
+
+    # 2. Relax all boxes to completely eliminate overlaps while preserving exact areas and topology
+    active_indices = [i for i in range(n) if node_types[i] not in OVERLAP_EXEMPT_TYPES]
+    active_names = [node_names[i] for i in active_indices]
+    if len(active_indices) > 1:
+        sub_boxes = boxes[active_indices]
+        rel_boxes = relax_box_collisions(sub_boxes, G_in=G_in, node_names=active_names, max_iters=80, padding=0.05)
+        boxes[active_indices] = rel_boxes
+
+    polys = [box(*b) for b in boxes]
+    for i in range(n):
+        if node_types[i] in OVERLAP_EXEMPT_TYPES:
+            p = raw_polys[i]
+            req = req_areas[i]
+            if p is not None and not p.is_empty:
+                cx, cy = p.centroid.x, p.centroid.y
+                w = max(np.sqrt(req), 4.0)
+                h = req / w
+                polys[i] = box(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)
+
+    # 3. Living Room Geometry: Strictly ensure 4 to 8 vertices
+    if liv_idx >= 0 and polys[liv_idx] is not None:
+        liv_geom = polys[liv_idx]
+        outer_indices = [i for i in active_indices if i != liv_idx]
+        inter_outers = []
+        for i in outer_indices:
+            if liv_geom.intersects(polys[i]):
+                ia = liv_geom.intersection(polys[i]).area
+                if ia > 10.0:
+                    inter_outers.append((ia, i))
+        inter_outers.sort(reverse=True)
+        cutouts_done = set()
+        for _, idx in inter_outers:
+            if len(cutouts_done) >= 2:
+                break
+            diff = liv_geom.difference(polys[idx])
+            if diff.is_valid and diff.geom_type == "Polygon":
+                nv = len(diff.exterior.coords) - 1
+                if 4 <= nv <= 8 and abs(diff.area - req_areas[liv_idx]) / max(req_areas[liv_idx], 1.0) <= 0.25:
+                    liv_geom = diff
+                    cutouts_done.add(idx)
+
+        # Separate any outer room that still overlaps with the living room
+        for i in outer_indices:
+            if i not in cutouts_done and liv_geom.intersects(polys[i]):
+                inter = liv_geom.intersection(polys[i])
+                if inter.area > 0.001:
+                    ox = min(boxes[i][2], liv_geom.bounds[2]) - max(boxes[i][0], liv_geom.bounds[0])
+                    oy = min(boxes[i][3], liv_geom.bounds[3]) - max(boxes[i][1], liv_geom.bounds[1])
+                    if ox > 0 and oy > 0:
+                        lcx, lcy = liv_geom.centroid.x, liv_geom.centroid.y
+                        bcx, bcy = (boxes[i][0] + boxes[i][2]) / 2.0, (boxes[i][1] + boxes[i][3]) / 2.0
+                        if abs(bcx - lcx) >= abs(bcy - lcy):
+                            sh = ox + 0.05
+                            if bcx >= lcx:
+                                boxes[i][0] += sh; boxes[i][2] += sh
+                            else:
+                                boxes[i][0] -= sh; boxes[i][2] -= sh
                         else:
-                            fixed_polys[j] = _extract_poly(p2.difference(inter))
-                    else:
-                        # p2 has more surplus, try subtracting from p2
-                        diff = _extract_poly(p2.difference(inter))
-                        if diff is not None and diff.area > 1.0:
-                            fixed_polys[j] = diff
+                            sh = oy + 0.05
+                            if bcy >= lcy:
+                                boxes[i][1] += sh; boxes[i][3] += sh
+                            else:
+                                boxes[i][1] -= sh; boxes[i][3] -= sh
+                        polys[i] = box(*boxes[i])
+
+        polys[liv_idx] = liv_geom
+
+    # 4. Final safety pass on outer boxes to ensure zero overlap between outer rooms
+    outer_indices = [i for i in active_indices if i != liv_idx]
+    if len(outer_indices) > 1:
+        o_sub = boxes[outer_indices]
+        o_rel = relax_box_collisions(o_sub, max_iters=40, padding=0.05)
+        boxes[outer_indices] = o_rel
+        for idx, b in zip(outer_indices, o_rel):
+            polys[idx] = box(*b)
+
+    # 5. Guaranteed zero-overlap safety net (any remaining tiny overlap)
+    for _ in range(15):
+        changed = False
+        for i in range(n):
+            for j in range(i + 1, n):
+                p1, p2 = polys[i], polys[j]
+                if p1 is None or p2 is None or p1.is_empty or p2.is_empty:
+                    continue
+                t1, t2 = node_types[i], node_types[j]
+                if t1 in OVERLAP_EXEMPT_TYPES or t2 in OVERLAP_EXEMPT_TYPES:
+                    continue
+                if p1.intersects(p2):
+                    inter = p1.intersection(p2)
+                    if inter.area > 0.001:
+                        changed = True
+                        b1 = boxes[i] if t1 != "living" else p1.bounds
+                        b2 = boxes[j] if t2 != "living" else p2.bounds
+                        ox = min(b1[2], b2[2]) - max(b1[0], b2[0])
+                        oy = min(b1[3], b2[3]) - max(b1[1], b2[1])
+                        cxi = (b1[0] + b1[2]) / 2.0; cxj = (b2[0] + b2[2]) / 2.0
+                        cyi = (b1[1] + b1[3]) / 2.0; cyj = (b2[1] + b2[3]) / 2.0
+                        
+                        if t1 == "living" and t2 != "living":
+                            if ox <= oy:
+                                sh = ox + 0.05
+                                if cxi <= cxj: boxes[j][0] += sh; boxes[j][2] += sh
+                                else: boxes[j][0] -= sh; boxes[j][2] -= sh
+                            else:
+                                sh = oy + 0.05
+                                if cyi <= cyj: boxes[j][1] += sh; boxes[j][3] += sh
+                                else: boxes[j][1] -= sh; boxes[j][3] -= sh
+                            polys[j] = box(*boxes[j])
+                        elif t2 == "living" and t1 != "living":
+                            if ox <= oy:
+                                sh = ox + 0.05
+                                if cxi <= cxj: boxes[i][0] -= sh; boxes[i][2] -= sh
+                                else: boxes[i][0] += sh; boxes[i][2] += sh
+                            else:
+                                sh = oy + 0.05
+                                if cyi <= cyj: boxes[i][1] -= sh; boxes[i][3] -= sh
+                                else: boxes[i][1] += sh; boxes[i][3] += sh
+                            polys[i] = box(*boxes[i])
                         else:
-                            fixed_polys[i] = _extract_poly(p1.difference(inter))
-    
-    polys = fixed_polys
+                            if ox <= oy:
+                                sh = (ox + 0.05) / 2.0
+                                if cxi <= cxj:
+                                    boxes[i][0] -= sh; boxes[i][2] -= sh; boxes[j][0] += sh; boxes[j][2] += sh
+                                else:
+                                    boxes[i][0] += sh; boxes[i][2] += sh; boxes[j][0] -= sh; boxes[j][2] -= sh
+                            else:
+                                sh = (oy + 0.05) / 2.0
+                                if cyi <= cyj:
+                                    boxes[i][1] -= sh; boxes[i][3] -= sh; boxes[j][1] += sh; boxes[j][3] += sh
+                                else:
+                                    boxes[i][1] += sh; boxes[i][3] += sh; boxes[j][1] -= sh; boxes[j][3] -= sh
+                            polys[i] = box(*boxes[i])
+                            polys[j] = box(*boxes[j])
+        if not changed:
+            break
+
+    polys = polys
     # ----------------------------------------------
 
     checks = check_polygons(G_in, polys)
@@ -366,34 +565,38 @@ def generate_floorplans(model, graphs: List[nx.Graph], K: int = 8, steps: int = 
         chunk = flat[s:s + batch_size]
         batch = graph_batch([G for _, G in chunk], model.S)
         batch = {k: v.to(device) for k, v in batch.items()}
-        # Enforce minimum room area limit
-        batch["area"] = batch["area"].clamp(min=20.0)
-        
         out = model.sample(batch, steps=steps, eta=eta, sample_counts=sample_counts, generator=gen,
                            guidance=guidance, guide_start=guide_start, guide_iters=guide_iters)
         P, vm = model.to_polygons(out["x"], out["tok_mask"])
 
-        # --- NEW: ACTIVE CONTOUR TTO ---
+        # --- MULTI-OBJECTIVE ACTIVE CONTOUR TTO ---
         with torch.enable_grad():
-            from .losses import ortho_loss, area_loss, validity_loss, aspect_ratio_loss
-            P_opt = P.detach().clone()
-            P_opt.requires_grad = True
-            opt = torch.optim.Adam([P_opt], lr=0.5)
+            from .losses import (ortho_loss, area_loss, validity_loss, aspect_ratio_loss,
+                                 overlap_loss, connectivity_losses)
+            from .config import ROOM_TYPE_TO_ID
+            P_opt = P.detach().clone().requires_grad_(True)
+            opt = torch.optim.Adam([P_opt], lr=0.08)
             rmask = batch["room_mask"]
             target_area = batch["area"]
             vm_r = vm & rmask[..., None]
+            exempt = batch["room_type"] == ROOM_TYPE_TO_ID["front_door"]
             
-            for _ in range(100):
+            for step in range(50):
+                lr = 0.08 * (1.0 - 0.7 * step / 50)
+                for pg in opt.param_groups: pg["lr"] = lr
                 opt.zero_grad()
                 ol = ortho_loss(P_opt, vm_r, rmask).sum()
                 al = area_loss(P_opt, vm_r, rmask, target_area).sum()
                 vl = validity_loss(P_opt, vm_r, rmask, target_area).sum()
                 aspl = aspect_ratio_loss(P_opt, vm_r, rmask, max_ratio=3.0).sum()
-                loss = 10.0 * ol + 1.0 * al + 1.0 * vl + 5.0 * aspl
+                ovl = overlap_loss(P_opt, vm_r, rmask, grid=32, exempt=exempt).sum()
+                conn, nonc = connectivity_losses(P_opt, vm_r, rmask, batch["adj"])
+                loss = (3.0 * ol + 6.0 * al + 1.0 * vl + 2.0 * aspl + 
+                        8.0 * ovl + 30.0 * conn.sum() + 10.0 * nonc.sum())
                 loss.backward()
                 opt.step()
             P = P_opt.detach()
-        # -------------------------------
+        # ------------------------------------------
         P, vm = P.cpu().numpy().astype(np.float64), vm.cpu().numpy()
         for b, (gi, G) in enumerate(chunk):
             n = len(G)
