@@ -1,0 +1,105 @@
+================================================================================
+EXPERIMENT RUN SPECIFICATION: MEDIUM RUN (GEOMETRY-FIRST BOOLEAN CLIPPING)
+================================================================================
+
+1. RUN IDENTIFICATION & MAPPING
+--------------------------------------------------------------------------------
+- Designation: Run 2 (Medium / Geometry-First Run)
+- Evaluation File: runs/Medium/eval_metrics.json
+- Evaluated Plans: 1,560 held-out test floorplans (K=16 samples per graph, 50 steps)
+- Key Characteristic: Dramatic geometric validity breakthrough, but severe area collapse.
+  * Geometric Validity: 90.97% (massive jump from 1.19% baseline)
+  * Overlap Violations: 0.00% (all overlaps mechanically eliminated via boolean difference)
+  * Invalid Polygons: 9.03% (down from 44.13%)
+  * Room Area Match (Area OK): 0.008% (~0.01% — almost all rooms violated area bounds)
+  * Mean Room Area Error: 45.67% (severe loss of room square footage)
+  * Spurious Edge Rate: 14.60% (room edges displaced from intended layout)
+  * CSR Top-1: 0.06% (failed constraint satisfaction solely due to area violations)
+- Companion Intermediate Run Reference: The intermediate training run achieved 19.96% invalid
+  polygons, 97.70% connectivity, and 33.51% area match, but suffered 100% overlap prior to
+  inference post-processing.
+
+2. MODEL ARCHITECTURE
+--------------------------------------------------------------------------------
+- Architecture Type: Dual-Transformer Architecture (Graphormer + Diffusion Transformer)
+  * Conditioning Encoder: Graph Transformer (4 layers, 8 heads, d_model = 256)
+  * Generative Denoiser: Vertex/Polygon Transformer (6 AdaLN blocks, 8 heads, d_model = 256)
+- Prediction Target: Direct clean coordinate prediction (x0-prediction).
+- Model Dimensions:
+  * Hidden Size: 256
+  * Attention Heads: 8 (dk = 32)
+  * Graph Encoder Layers: 4
+  * Denoiser Layers: 6
+  * Total Parameter Count: 13,374,210 (~13.37M parameters)
+- What the Model Generates: Vertex coordinates on 256x256 canvas normalized by S = 168.0.
+
+3. CONDITIONING INPUT & ENCODING
+--------------------------------------------------------------------------------
+- Input Graph G = (V, E):
+  * Room Categories (V): 8 architectural categories (living, bedroom, bathroom, kitchen,
+    door, window, wall, front_door), encoded via room type embedding.
+  * Target Room Areas (A): Requested area continuous encoding: [sqrt(A)/S, log(A)/10.0].
+  * Adjacency Edges (E): 4 connection types (none, direct, via_door, via_window) fed as
+    learnable attention bias in the Graph Transformer.
+  * Global Layout Token: Aggregates graph-level context.
+
+4. DIFFUSION SETUP
+--------------------------------------------------------------------------------
+- Timesteps (T): 1,000 steps with cosine schedule.
+- Diffusion Target: Clean layout x0-prediction.
+- Sampler: DDIM sampler (eta = 0.0), 50 steps.
+- Guidance: Sampling without runtime guidance (--guidance 0.0).
+
+5. LOSS FUNCTIONS & EXACT WEIGHTS
+--------------------------------------------------------------------------------
+- Training Losses:
+  * Base Diffusion Loss: Coordinate MSE (weight = 1.0)
+  * --w_overlap: 2.0 (Balanced soft raster overlap)
+  * --w_valid: 1.0 (Auxiliary validity)
+  * --w_area: 1.0 (Area smooth L1 loss)
+  * --w_conn: 2.0, --w_nonconn: 1.0
+  * Auxiliary Warmup: Instant ramp (--aux_start_epoch 0, --aux_ramp_epochs 0)
+- Test-Time Active Contour Optimization (TTO):
+  * 100 gradient steps with Adam (lr = 0.5)
+  * Loss: 10.0 * ortho + 1.0 * area + 1.0 * validity + 5.0 * aspect_ratio
+  * Issue: validity_loss was unnormalized (~3,700), overpowering area gradients.
+
+6. TRAINING SETUP
+--------------------------------------------------------------------------------
+- Optimizer: AdamW (lr = 2e-4, weight_decay = 0.01).
+- Warmup: 1,000 steps.
+- Batch Size: 32 layouts.
+- Gradient Clipping: 1.0.
+- EMA Decay: 0.999.
+- Epochs: 200 epochs.
+- Split: 13,023 train / 1,562 val / 1,560 test.
+
+7. INFERENCE & POST-PROCESSING (ROOT CAUSE OF AREA COLLAPSE)
+--------------------------------------------------------------------------------
+- Post-Processing Algorithm:
+  * Overlap Resolution: Destructive boolean difference slicing:
+      diff = p1.difference(p2)
+      p1 = diff
+    When rooms overlapped, the algorithm sliced intersecting polygons away.
+  * The Three Fatal Area Defects Identified:
+    1. Slicing Degradation: Subtraction reduced bedrooms and kitchens by 40-60% of their area,
+       turning rooms into thin slivers that failed the 30% area tolerance.
+    2. Unscaled Front Door: front_door was treated as exempt and left at its raw diffusion
+       scale (~3,400 units instead of 113.5 target), creating an isolated 2,900% error that
+       ruined layout-level averages.
+    3. 1D Skyscraper Collapse: Collision separation always took min(ox, oy). Because rooms
+       were wider than tall (W > H), ox > oy triggered exclusively, stacking rooms into a
+       vertical skyscraper column.
+
+8. EVALUATION PROTOCOL & METRIC DEFINITIONS
+--------------------------------------------------------------------------------
+- Test Dataset Size: 1,560 deduplicated plans (near-duplicates removed via KDTree descriptor radius 0.004).
+- Multi-Sample Generation: K = 16 independent layouts drawn per test graph.
+- Top-1 Selection: Ranked by Candidate score:
+    score = 1.0 * area_err + 3.0 * overlap_sum + 2.0 * topology_err + 10.0 * n_invalid
+- Metric Definitions:
+  * Geometric Validity: Percentage of layouts where all rooms are valid Shapely Polygons with zero
+    overlap violations (achieved 90.97%).
+  * Area OK: All rooms within 30% tolerance of target area (failed at 0.008%).
+  * CSR Top-1: 0.06% (bottlenecked purely by area violation).
+================================================================================

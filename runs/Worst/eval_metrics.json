@@ -1,0 +1,44 @@
+{
+  "run_name": "Worst_Run_Collapsed_Phase3",
+  "description": "Collapsed run caused by unnormalized loss explosion (w_overlap=10.0, w_valid=5.0) during Phase 3 fine-tuning. Geometry collapsed into scrambled polygons.",
+  "floorplan": {
+    "csr_top1": 0.0,
+    "csr_top1_strict": 0.0,
+    "csr_any_of_k": 0.0,
+    "csr_mean_over_k": 0.0,
+    "invalid_polygon_pct": 65.05208333333333,
+    "room_invalid_pct": 8.516268219692305,
+    "overlap_viol_pct": 100.0,
+    "area_ok_pct": 5.388621794871795,
+    "connectivity_acc": 0.9253211824407034,
+    "spurious_edge_rate": 0.7445992126475085,
+    "topology_consistent_pct": 0.0,
+    "geometric_validity_pct": 0.0
+  },
+  "room_top1": {
+    "area_err": 0.2891627006985936,
+    "centroid_err": 90.36781304599232,
+    "iou": 0.060730054868786784,
+    "coord_err": 96.29827627429573,
+    "vcount_acc": 0.465083084675175
+  },
+  "room_best_of_k": {
+    "area_err": 0.25423577479929155,
+    "centroid_err": 82.76859274842802,
+    "iou": 0.07343585484751314,
+    "coord_err": 88.47135928650496,
+    "vcount_acc": 0.4872199099925195
+  },
+  "n_plans": 1560,
+  "K": 16,
+  "steps": 50,
+  "ground_truth_reference": {
+    "csr": 0.8948717948717949,
+    "csr_strict": 0.8634615384615385,
+    "edge_recall": 0.9979915847952892,
+    "spurious_rate": 0.0014316804167177567,
+    "invalid_polygon": 0.0,
+    "overlap_ok": 0.9205128205128205,
+    "area_ok": 1.0
+  }
+}

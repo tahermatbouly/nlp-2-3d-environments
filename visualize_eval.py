@@ -126,6 +126,8 @@ def load_eval_data(path: str) -> Dict[str, Any]:
     candidates = [
         path,
         os.path.join(script_dir, path),
+        os.path.join(script_dir, "runs", "Best", "eval_metrics.json"),
+        os.path.join(os.getcwd(), "runs", "Best", "eval_metrics.json"),
         os.path.join(script_dir, "checkpoints", "diffusion", "eval_test.json"),
         os.path.join(script_dir, "eval_test.json"),
         os.path.join(os.getcwd(), "eval_test.json"),
@@ -555,12 +557,13 @@ def render_dashboard(data: Dict[str, Any], out_path: str, dpi: int = 300):
     ax3.text(0.5, 0.90, "Executive Architectural Scorecard", ha="center", va="top",
              fontsize=13, fontweight="bold", color=PALETTE["text_dark"])
 
+    overlap_ok_pct = max(0.0, 100.0 - fp.get("overlap_viol_pct", 0.0))
     stats = [
-        ("Top-1 Constraint Satisfaction", f"{csr1:.1f}%", PALETTE["primary"]),
-        ("Strict Topology Satisfaction", f"{csr_strict:.1f}%", "#0284c7"),
-        ("Polygon Validity Rate", f"{geom_val:.1f}%", PALETTE["success"]),
-        ("Zero Overlap Violations", "0.00%", PALETTE["success"]),
-        ("Room Area Compliance", f"{area_ok:.1f}%", PALETTE["primary"]),
+        ("Top-1 Constraint Satisfaction", f"{csr1:.1f}%", PALETTE["primary"] if csr1 > 50 else (PALETTE["warning"] if csr1 > 0 else PALETTE["danger"])),
+        ("Strict Topology Satisfaction", f"{csr_strict:.1f}%", "#0284c7" if csr_strict > 50 else (PALETTE["warning"] if csr_strict > 0 else PALETTE["danger"])),
+        ("Polygon Validity Rate", f"{geom_val:.1f}%", PALETTE["success"] if geom_val > 80 else PALETTE["danger"]),
+        ("Zero Overlap Compliance", f"{overlap_ok_pct:.1f}%", PALETTE["success"] if overlap_ok_pct > 80 else PALETTE["danger"]),
+        ("Room Area Compliance", f"{area_ok:.1f}%", PALETTE["primary"] if area_ok > 80 else PALETTE["danger"]),
         ("Outer Room Vertices", "4 (Strict Rectangle)", PALETTE["text_dark"]),
         ("Living Room Vertices", "4 – 8 (Manhattan Ortho)", PALETTE["text_dark"]),
         ("Adjacency Edge Recall", f"{fp.get('connectivity_acc', 0.807)*100:.1f}%", PALETTE["text_muted"]),
@@ -591,7 +594,128 @@ def render_dashboard(data: Dict[str, Any], out_path: str, dpi: int = 300):
 
 
 # ----------------------------------------------------------------------------
-# 8. Main CLI Execution
+# 8. Cross-Run Comparative Progression Chart
+# ----------------------------------------------------------------------------
+def plot_comparison_progression(runs_data: Dict[str, Dict[str, Any]], save_path: str, dpi: int = 300) -> None:
+    """Render publication-grade cross-run progression chart comparing Worst, Medium, Best, and GT."""
+    set_style()
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9.5), dpi=dpi)
+    fig.patch.set_facecolor(PALETTE["neutral_bg"])
+
+    fig.suptitle(
+        "Ablation Progression Across ResPlan Architectural Floorplan Diffusion Runs\n"
+        "Worst (Loss Collapse) vs Medium (Boolean Clipping) vs Best (MTV Relaxation & Calibrated Diffusion)",
+        fontsize=14, fontweight="bold", y=0.98, color=PALETTE["text_dark"]
+    )
+
+    run_keys = ["Worst", "Medium", "Best"]
+    labels = ["Worst\n(Loss Collapse)", "Medium\n(Boolean Clip)", "Best\n(ResPlan MTV)"]
+    bar_colors = ["#ef4444", "#f59e0b", "#0f766e"]
+
+    # (Title, extractor, GT ceiling, is_lower_better, y_max, unit)
+    panels = [
+        (
+            "Constraint Satisfaction (CSR Top-1)",
+            lambda d: d.get("floorplan", {}).get("csr_top1", 0.0) * 100,
+            89.5, False, 105, "%",
+        ),
+        (
+            "Geometric Polygon Validity Rate",
+            lambda d: d.get("floorplan", {}).get("geometric_validity_pct", 0.0),
+            100.0, False, 115, "%",
+        ),
+        (
+            "Zero Overlap Compliance",
+            lambda d: max(0.0, 100.0 - d.get("floorplan", {}).get("overlap_viol_pct", 100.0)),
+            92.1, False, 115, "%",
+        ),
+        (
+            "Room Target Area Match (Area OK)",
+            lambda d: d.get("floorplan", {}).get("area_ok_pct", 0.0),
+            100.0, False, 115, "%",
+        ),
+        (
+            "Graph Adjacency Edge Recall",
+            lambda d: d.get("floorplan", {}).get("connectivity_acc", 0.0) * 100,
+            99.8, False, 115, "%",
+        ),
+        (
+            "Room Relative Area Error",
+            lambda d: d.get("room_top1", {}).get("area_err", 0.0) * 100,
+            0.0, True, 60, "%",
+        ),
+    ]
+
+    x = np.arange(len(run_keys))
+    for ax, (title, getter, gt_val, is_lower, y_max, unit) in zip(axes.flat, panels):
+        vals = [getter(runs_data[k]) for k in run_keys]
+        bars = ax.bar(x, vals, color=bar_colors, width=0.52, edgecolor="none", zorder=3)
+
+        for bar, val in zip(bars, vals):
+            h = bar.get_height()
+            y_offset = 2.5 if y_max > 80 else 1.2
+            ax.text(bar.get_x() + bar.get_width() / 2, h + y_offset,
+                    f"{val:.1f}{unit}", ha="center", va="bottom",
+                    fontsize=9.5, fontweight="bold", color=PALETTE["text_dark"])
+
+        if gt_val > 0.0:
+            ax.axhline(gt_val, color=PALETTE["gt"], linestyle="--", linewidth=1.6, zorder=4,
+                       label=f"GT Ceiling ({gt_val:.1f}{unit})")
+            ax.legend(loc="upper left" if is_lower else "lower right",
+                      fontsize=8.5, framealpha=0.9, edgecolor=PALETTE["card_border"])
+
+        ax.set_title(title, pad=10, fontsize=11, fontweight="bold")
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, fontweight="semibold", fontsize=9)
+        ax.set_ylim(0, y_max)
+        ax.set_ylabel(f"Value ({unit})", labelpad=6)
+        ax.grid(axis="y", zorder=0)
+
+    fig.subplots_adjust(top=0.90, bottom=0.08, left=0.06, right=0.96, hspace=0.35, wspace=0.25)
+    fig.savefig(save_path, dpi=dpi, facecolor=PALETTE["neutral_bg"], bbox_inches="tight")
+    plt.close(fig)
+    print(f"[visualize] Saved comparative progression chart to: {save_path}")
+
+
+# ----------------------------------------------------------------------------
+# 9. Multi-Run Directory Exporter
+# ----------------------------------------------------------------------------
+def export_three_runs(base_out_dir: str = "runs", dpi: int = 300, fmt: str = "png") -> None:
+    """Export individual runs and the cross-run comparative analysis."""
+    run_names = ["Worst", "Medium", "Best"]
+    runs_data: Dict[str, Dict[str, Any]] = {}
+
+    for run_name in run_names:
+        run_dir = os.path.join(base_out_dir, run_name)
+        os.makedirs(run_dir, exist_ok=True)
+        json_path = os.path.join(run_dir, "eval_metrics.json")
+        data = load_eval_data(json_path)
+        runs_data[run_name] = data
+
+        print(f"\n[visualize] --- Rendering Visualizations for Run: {run_name} ---")
+        # 1. Dashboard
+        render_dashboard(data, os.path.join(run_dir, f"dashboard_eval.{fmt}"), dpi=dpi)
+        if fmt != "pdf":
+            render_dashboard(data, os.path.join(run_dir, "dashboard_eval.pdf"), dpi=dpi)
+
+        # 2. Individual figures
+        plot_csr_benchmark(data, save_path=os.path.join(run_dir, f"01_csr_benchmark.{fmt}"))
+        plot_compliance_donuts(data, save_path=os.path.join(run_dir, f"02_compliance_donuts.{fmt}"))
+        plot_topology_comparison(data, save_path=os.path.join(run_dir, f"03_topology_comparison.{fmt}"))
+        plot_room_quality(data, save_path=os.path.join(run_dir, f"04_room_quality_comparison.{fmt}"))
+        plot_error_tolerances(data, save_path=os.path.join(run_dir, f"05_error_tolerances.{fmt}"))
+        plot_radar_summary(data, save_path=os.path.join(run_dir, f"06_room_quality_radar.{fmt}"))
+
+    # Render comparative progression
+    print("\n[visualize] --- Rendering Cross-Run Progression Benchmark ---")
+    comp_path = os.path.join(base_out_dir, f"comparison_progression.{fmt}")
+    plot_comparison_progression(runs_data, comp_path, dpi=dpi)
+    if fmt != "pdf":
+        plot_comparison_progression(runs_data, os.path.join(base_out_dir, "comparison_progression.pdf"), dpi=dpi)
+
+
+# ----------------------------------------------------------------------------
+# 10. Main CLI Execution
 # ----------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="ResPlan Floorplan Diffusion Metric Visualizer")
@@ -599,28 +723,38 @@ def main():
                         help="Path to evaluation JSON metrics file (default: checkpoints/diffusion/eval_test.json)")
     parser.add_argument("--out-dir", "-o", default="figures",
                         help="Directory to save generated charts (default: figures)")
+    parser.add_argument("--runs-dir", default="runs",
+                        help="Root directory for Worst, Medium, and Best runs (default: runs)")
+    parser.add_argument("--export-runs", action="store_true", default=True,
+                        help="Export visualizations for Worst, Medium, and Best into runs/ (default: True)")
+    parser.add_argument("--skip-runs", action="store_true", default=False,
+                        help="Skip multi-run export into runs/ directory")
     parser.add_argument("--dpi", type=int, default=300,
                         help="Output image resolution in DPI (default: 300)")
     parser.add_argument("--format", default="png", choices=["png", "pdf", "svg"],
                         help="Image output format (default: png)")
     args = parser.parse_args()
 
-    os.makedirs(args.out_dir, exist_ok=True)
     set_style()
 
-    print(f"[visualize] Loading metrics from: {args.input}")
+    # 1. Export 3 runs if enabled
+    if args.export_runs and not args.skip_runs:
+        export_three_runs(base_out_dir=args.runs_dir, dpi=args.dpi, fmt=args.format)
+
+    # 2. Export single run to out-dir
+    os.makedirs(args.out_dir, exist_ok=True)
+    print(f"\n[visualize] Loading metrics from: {args.input}")
     data = load_eval_data(args.input)
 
-    # 1. Executive Dashboard (Combined)
+    # Executive Dashboard (Combined)
     dash_path = os.path.join(args.out_dir, f"dashboard_eval.{args.format}")
     render_dashboard(data, dash_path, dpi=args.dpi)
 
-    # Also render PDF version for publication
     if args.format != "pdf":
         dash_pdf = os.path.join(args.out_dir, "dashboard_eval.pdf")
         render_dashboard(data, dash_pdf, dpi=args.dpi)
 
-    # 2. Individual High-Res Figures
+    # Individual High-Res Figures
     print("[visualize] Generating standalone component figures...")
     plot_csr_benchmark(data, save_path=os.path.join(args.out_dir, f"01_csr_benchmark.{args.format}"))
     plot_compliance_donuts(data, save_path=os.path.join(args.out_dir, f"02_compliance_donuts.{args.format}"))
@@ -629,7 +763,7 @@ def main():
     plot_error_tolerances(data, save_path=os.path.join(args.out_dir, f"05_error_tolerances.{args.format}"))
     plot_radar_summary(data, save_path=os.path.join(args.out_dir, f"06_room_quality_radar.{args.format}"))
 
-    print(f"[visualize] All figures successfully generated in: {os.path.abspath(args.out_dir)}/")
+    print(f"\n[visualize] Complete! All runs and figures generated successfully.")
 
 
 if __name__ == "__main__":
