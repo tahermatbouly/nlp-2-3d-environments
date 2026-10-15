@@ -1,0 +1,448 @@
+{
+  "mode": "sequential",
+
+  "settings": {
+    "silence_step_seconds": 5,
+    "max_retries_per_question": 3,
+    "skip_optional_after_max_retries": true
+  },
+
+  "_comment_segments": "Every spoken line is a list of segments. A 'static' segment has a stable id and is pre-generated once, ever. A 'value' segment is the candidate's own extracted data - short, synthesized live, and cacheable by text hash since names/values repeat across calls. This is what keeps the summary fast while still personalised.",
+
+  "fields": [
+    {
+      "name": "candidate_name",
+      "required": true,
+      "multi": false,
+      "label": "الاسم",
+      "none_text": "مفيش اسم",
+      "description": "The candidate's full name.",
+      "asked_by": "q1_name"
+    },
+    {
+      "name": "target_domain",
+      "required": true,
+      "multi": false,
+      "label": "المجال",
+      "none_text": "مفيش مجال محدد",
+      "description": "The field, domain or job title the candidate is interested in.",
+      "asked_by": "q2_domain"
+    },
+    {
+      "name": "experience_summary",
+      "required": false,
+      "multi": false,
+      "label": "الخبرة",
+      "none_text": "مفيش خبرة",
+      "description": "A short free-text summary of what the candidate has worked on: companies, projects, responsibilities.",
+      "asked_by": "q3_experience_story"
+    },
+    {
+      "name": "years_of_experience",
+      "required": true,
+      "multi": false,
+      "label": "مدة الخبرة",
+      "none_text": "مفيش خبرة",
+      "description": "How long the candidate has worked or trained in the field. Zero is a valid answer for a fresh graduate.",
+      "asked_by": "q4_experience_duration"
+    },
+    {
+      "name": "education_level",
+      "required": true,
+      "multi": false,
+      "label": "المؤهل",
+      "none_text": "مفيش مؤهل",
+      "description": "The candidate's degree and specialisation, or highest qualification.",
+      "asked_by": "q5_education"
+    },
+    {
+      "name": "key_skills",
+      "required": true,
+      "multi": true,
+      "label": "المهارات",
+      "none_text": "مفيش مهارات",
+      "description": "Skills and programming languages, each one a separate item.",
+      "asked_by": "q6_skills_tools"
+    },
+    {
+      "name": "tools_technologies",
+      "required": false,
+      "multi": true,
+      "label": "الأدوات",
+      "none_text": "مفيش أدوات",
+      "description": "Tools, frameworks and software the candidate uses, each one a separate item.",
+      "asked_by": "q6_skills_tools"
+    },
+    {
+      "name": "english_proficiency",
+      "required": true,
+      "multi": false,
+      "label": "مستوى الإنجليزي",
+      "none_text": "مفيش إنجليزي",
+      "description": "The candidate's English level, especially reading and writing.",
+      "asked_by": "q7_english"
+    },
+    {
+      "name": "notes",
+      "required": false,
+      "multi": false,
+      "label": "ملاحظات",
+      "none_text": "مفيش ملاحظات",
+      "description": "Anything else relevant the candidate mentioned that does not fit another field.",
+      "asked_by": null
+    }
+  ],
+
+  "questions": [
+    {
+      "id": "q1_name",
+      "is_welcome": true,
+      "target_field": "candidate_name",
+      "segments": [
+        {
+          "type": "static",
+          "id": "q1_name__s1",
+          "text": "مساء الخير، مع حَضْرِتَكْ Mohamed من قسم التوظيف في شركة جي بي كورب. ممكن أعرف اسم حضرتك؟"
+        }
+      ],
+      "repeat_segments": [
+        {
+          "type": "static",
+          "id": "q1_name__repeat",
+          "text": "ممكن أعرف اسم حضرتك؟"
+        }
+      ]
+    },
+    {
+      "id": "q2_domain",
+      "target_field": "target_domain",
+      "segments": [
+        {
+          "type": "live",
+          "template": "أهلا يا {candidate_name}",
+          "_comment": "Synthesized fresh each call (no TTS cache). {candidate_name} speaks first name only."
+        },
+        {
+          "type": "static",
+          "id": "q2_domain__s2",
+          "text": "حضرتك مهتم بأنهي مجال أو وظيفة؟"
+        }
+      ],
+      "repeat_segments": [
+        {
+          "type": "static",
+          "id": "q2_domain__repeat",
+          "text": "حضرتك مهتم بأنهي مجال أو وظيفة؟"
+        }
+      ]
+    },
+    {
+      "id": "q3_experience_story",
+      "target_field": "experience_summary",
+      "long_answer": true,
+      "segments": [
+        {
+          "type": "static",
+          "id": "q3_experience_story__s1",
+          "text": "تمام، ممكن تحكيلي شوية عن خبرتك في المجال ده؟"
+        }
+      ]
+    },
+    {
+      "id": "q4_experience_duration",
+      "target_field": "years_of_experience",
+      "segments": [
+        {
+          "type": "static",
+          "id": "q4_experience_duration__s1",
+          "text": "اشتغلت أو اتدربت في المجال ده لمدة قد إيه؟"
+        }
+      ]
+    },
+    {
+      "id": "q5_education",
+      "target_field": "education_level",
+      "segments": [
+        {
+          "type": "static",
+          "id": "q5_education__s1",
+          "text": "ممكن أعرف مؤهلك الدراسي وتخصصك؟"
+        }
+      ]
+    },
+    {
+      "id": "q6_skills_tools",
+      "target_fields": [
+        "key_skills",
+        "tools_technologies"
+      ],
+      "segments": [
+        {
+          "type": "static",
+          "id": "q6_skills_tools__s1",
+          "text": "إيه أهم المهارات أو الأدوات اللي بتستخدمها في شغلك؟"
+        }
+      ]
+    },
+    {
+      "id": "q7_english",
+      "target_field": "english_proficiency",
+      "segments": [
+        {
+          "type": "static",
+          "id": "q7_english__s1",
+          "text": "طيب ومستوى الإنجليزي عند حضرتك عامل إيه؟"
+        }
+      ]
+    }
+  ],
+
+  "summary": {
+    "_comment": "Assembled at runtime: every label is a cached static segment, only the values are live. Fields the candidate never answered are skipped entirely.",
+    "processing": [
+      {
+        "type": "static",
+        "id": "summary__processing",
+        "text": "لحظات يا فندم، هراجع مع حضرتك البيانات بسرعة وأدخلها على السيستم."
+      }
+    ],
+    "_comment_processing": "Spoken once before the summary (via intent_prompt) while value clips synthesize, so the candidate hears a human pause instead of silence.",
+    "intro": [
+      {
+        "type": "static",
+        "id": "summary__intro1",
+        "text": "تمام يا, "
+      },
+      {
+        "type": "value",
+        "field": "candidate_name"
+      },
+      {
+        "type": "static",
+        "id": "summary__intro2",
+        "text": "خليني أراجع معاك البيانات اللي سجلتها بسرعة."
+      }
+    ],
+    "labels": [
+      {
+        "field": "target_domain",
+        "id": "summary__label_target_domain",
+        "text": "المجال اللي بتدور عليه:"
+      },
+      {
+        "field": "experience_summary",
+        "id": "summary__label_experience_summary",
+        "text": "خبرتك:"
+      },
+      {
+        "field": "years_of_experience",
+        "id": "summary__label_years_of_experience",
+        "text": "مدة الخبرة:"
+      },
+      {
+        "field": "education_level",
+        "id": "summary__label_education_level",
+        "text": "المؤهل:"
+      },
+      {
+        "field": "key_skills",
+        "id": "summary__label_key_skills",
+        "text": "المهارات:"
+      },
+      {
+        "field": "tools_technologies",
+        "id": "summary__label_tools_technologies",
+        "text": "الأدوات:"
+      },
+      {
+        "field": "english_proficiency",
+        "id": "summary__label_english_proficiency",
+        "text": "مستوى الإنجليزي:"
+      }
+    ],
+    "none_prefix": {
+      "id": "summary__none_prefix",
+      "text": "حضرتك قلت إن"
+    },
+    "confirm": [
+      {
+        "type": "static",
+        "id": "summary__confirm",
+        "text": "لو كله تمام قول لي تمام، ولو في حاجة عايز تعدلها قولي أغيّر إيه."
+      }
+    ]
+  },
+
+  "completion": [
+    {
+      "type": "static",
+      "id": "completion__s1",
+      "text": "تمام، شكراً جزيلاً لوقت حضرتك يا"
+    },
+    {
+      "type": "value",
+      "field": "candidate_name"
+    },
+    {
+      "type": "static",
+      "id": "completion__s2",
+      "text": "بياناتك اتسجلت، وهنتواصل معاك قريب لو في فرصة مناسبة. مع السلامة."
+    }
+  ],
+
+  "silence_prompts": [
+    {
+      "id": "silence_1",
+      "text": "حضرتك سامعني؟",
+      "end_call": false
+    },
+    {
+      "id": "silence_2",
+      "text": "ياريت لو حضرتك سامعني تجاوب على الأسئلة.",
+      "end_call": false
+    },
+    {
+      "id": "silence_3",
+      "text": "واضح إن في مشكلة في المكالمة، هنتصل بحضرتك في وقت تاني. مع السلامة.",
+      "end_call": true
+    }
+  ],
+
+  "system_messages": [
+    {
+      "id": "no_speech_retry",
+      "text": "معلش، مسمعتش حضرتك كويس.",
+      "then": "repeat_question"
+    },
+    {
+      "id": "wrong_answer_retry",
+      "text": "معلش، الإجابة دي مش بتجاوب على السؤال ده.",
+      "then": "repeat_question"
+    }
+  ],
+
+  "intents": [
+    {
+      "id": "cannot_hear",
+      "description": "The candidate says they cannot hear the agent, the line is bad, the voice is unclear or cutting out.",
+      "examples": [
+        "أنا مش سامعك كويس",
+        "الصوت مقطع",
+        "مش واضح",
+        "في تشويش"
+      ],
+      "text": "معلش، طيب قولي إيه اللي مش سامعه وأنا هعيده لحضرتك تاني وبصوت أوضح.",
+      "then": "repeat_question"
+    },
+    {
+      "id": "repeat_request",
+      "description": "The candidate asks the agent to repeat the question.",
+      "examples": [
+        "ممكن تعيد",
+        "تاني لو سمحت",
+        "إيه السؤال"
+      ],
+      "text": "من عينيا، هعيد السؤال.",
+      "then": "repeat_question"
+    },
+    {
+      "id": "not_understood",
+      "description": "The candidate did not understand what is being asked, or asks what the question means.",
+      "examples": [
+        "مش فاهم قصدك",
+        "يعني إيه",
+        "مش فاهم السؤال"
+      ],
+      "text": "معلش، خليني أوضحلك السؤال تاني.",
+      "then": "repeat_question"
+    },
+    {
+      "id": "ask_wait",
+      "description": "The candidate asks for a moment, says hold on, or needs time to think.",
+      "examples": [
+        "ثانية واحدة",
+        "استنى شوية",
+        "خليني أفتكر"
+      ],
+      "text": "خد وقتك يا فندم، أنا مستنيك.",
+      "then": "wait"
+    },
+    {
+      "id": "who_are_you",
+      "description": "The candidate asks who is calling, which company, or whether this is a real person.",
+      "examples": [
+        "مين معايا",
+        "إنت مين",
+        "شركة إيه"
+      ],
+      "text": "أنا Mohamed من قسم التوظيف في شركة جي بي كورب، وبنجمع بيانات المتقدمين عشان نرشحلهم أنسب فرص شغل عندنا.",
+      "then": "repeat_question"
+    },
+    {
+      "id": "why_asking",
+      "description": "The candidate asks why this information is needed, or raises a privacy concern.",
+      "examples": [
+        "ليه بتسألني كده",
+        "البيانات دي هتروح فين",
+        "مش عايز أقول"
+      ],
+      "text": "البيانات دي بتستخدم بس جوه الشركة عشان نرشحلك أنسب فرصة شغل، ومش بتتشارك مع حد بره.",
+      "then": "repeat_question"
+    },
+    {
+      "id": "skip_question",
+      "description": "The candidate refuses to answer this specific question or asks to move on.",
+      "examples": [
+        "مش عايز أجاوب على دي",
+        "عدي السؤال ده",
+        "بعدين"
+      ],
+      "text": "مفيش مشكلة، هعدي السؤال ده.",
+      "then": "skip_question"
+    },
+    {
+      "id": "call_later",
+      "description": "The candidate is busy right now and asks to be called at another time.",
+      "examples": [
+        "أنا مشغول دلوقتي",
+        "كلمني بعدين",
+        "مش وقته"
+      ],
+      "text": "تمام، هنتصل بحضرتك في وقت تاني. شكراً لوقتك، مع السلامة.",
+      "then": "end_call"
+    },
+    {
+      "id": "not_interested",
+      "description": "The candidate says they are not interested, not looking for a job, or asks not to be contacted.",
+      "examples": [
+        "مش مهتم",
+        "مش بدور على شغل",
+        "متكلمنيش تاني"
+      ],
+      "text": "تمام، شكراً لوقت حضرتك. لو غيرت رأيك تقدر تتواصل معانا في أي وقت. مع السلامة.",
+      "then": "end_call"
+    },
+    {
+      "id": "talk_to_human",
+      "description": "The candidate asks to speak with a real person instead.",
+      "examples": [
+        "عايز أكلم حد حقيقي",
+        "وصلني بموظف",
+        "مش عايز أتكلم مع روبوت"
+      ],
+      "text": "تمام، هسجل طلب حضرتك وزميل من الفريق هيتواصل معاك في أقرب وقت. خليني بس أكمل البيانات الأساسية معاك.",
+      "then": "repeat_question"
+    },
+    {
+      "id": "greeting",
+      "description": "The candidate greets the agent or exchanges pleasantries without answering.",
+      "examples": [
+        "أهلاً بيك",
+        "إزيك",
+        "مساء النور"
+      ],
+      "text": "أهلاً بحضرتك.",
+      "then": "repeat_question"
+    }
+  ]
+}
