@@ -1,18 +1,19 @@
+import re
+from typing import Literal
+
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import StructuredTool
-from pydantic import Field, create_model
+from pydantic import BaseModel, Field, create_model
 
-from Backend import config
-from Backend.agent.interview_manager import NONE_VALUE
+from backend import config
+from backend.agent.conversation_manager import normalize_digits
 
 
 # ============================================================
 # LLM
 # ============================================================
 # temperature=0: this is extraction/classification, not writing.
-# Any randomness here shows up as flaky tool-call behaviour on
-# borderline answers.
 
 llm = ChatGroq(
     api_key=config.GROQ_API_KEY,
@@ -24,9 +25,6 @@ llm = ChatGroq(
 # ============================================================
 # Known STT artifacts / obviously empty answers
 # ============================================================
-# Only treat true empties and known STT garbage as invalid here.
-# Short conversational words (تمام، نعم، اه، لا، مش عارف) can be
-# real answers or summary confirmations — let the LLM decide.
 
 INVALID_TRANSCRIPTS = {
     "",
@@ -37,54 +35,97 @@ INVALID_TRANSCRIPTS = {
 
 def is_obviously_invalid(transcript: str) -> bool:
 
-    normalized = transcript.strip().lower()
-
-    return normalized in INVALID_TRANSCRIPTS
+    return transcript.strip().lower() in INVALID_TRANSCRIPTS
 
 
 # ============================================================
-# Field update tool
+# Slot type -> tool argument type
 # ============================================================
 
-def _build_update_tool(fields: list[dict]) -> StructuredTool:
+VIA_VALUES = ("door", "open_passage", "none")
 
-    model_fields = {}
 
-    for field in fields:
+class RoomEdge(BaseModel):
+    room_a: str = Field(..., description="Room id, e.g. kitchen or bedroom_1.")
+    room_b: str = Field(..., description="Room id of the other room.")
+    via: Literal["door", "open_passage", "none"] = Field(
+        "door", description="How the two rooms connect."
+    )
 
-        annotation = (
-            list[str] | None if field.get("multi") else str | None
+
+def _annotation(slot: dict):
+
+    kind = slot["type"]
+
+    if kind == "integer":
+        return int | None
+
+    if kind == "number":
+        return float | None
+
+    if kind == "boolean":
+        return bool | None
+
+    if kind == "enum":
+
+        options = slot.get("options")
+
+        return (Literal[tuple(options)] | None) if options else (str | None)
+
+    if kind == "multi_enum":
+        return list[Literal[tuple(slot["options"])]] | None
+
+    if kind == "edge_list":
+        return list[RoomEdge] | None
+
+    return str | None
+
+
+def _describe_slots(slots: list[dict]) -> str:
+
+    return "\n".join(f"- {s['id']}: {s['description']}" for s in slots)
+
+
+# ============================================================
+# Tools
+# ============================================================
+
+def _build_update_tool(slots: list[dict]) -> StructuredTool:
+
+    model_fields = {
+        slot["id"]: (
+            _annotation(slot),
+            Field(default=None, description=slot["description"]),
         )
+        for slot in slots
+    }
 
-        model_fields[field["name"]] = (
-            annotation,
-            Field(
-                default=None,
-                description=(
-                    f"{field['description']} Set to the exact "
-                    "string \"NONE\" (or [\"NONE\"] for a list "
-                    "field) if the candidate explicitly said they "
-                    "don't have this — that is different from not "
-                    "mentioning it at all."
-                ),
+    ids = tuple(s["id"] for s in slots)
+
+    model_fields["use_default_for"] = (
+        list[Literal[ids]] | None,
+        Field(
+            default=None,
+            description=(
+                "Slot ids the user said they don't care about or want "
+                "you to decide (e.g. 'مش فارق', 'إنت اختار', 'you decide')."
             ),
-        )
+        ),
+    )
 
-    UpdateModel = create_model("AnswerUpdate", **model_fields)
+    UpdateModel = create_model("RequirementsUpdate", **model_fields)
 
-    def update_candidate_info(**kwargs):
+    def update_requirements(**kwargs):
         return kwargs
 
     return StructuredTool.from_function(
-        func=update_candidate_info,
-        name="update_candidate_info",
+        func=update_requirements,
+        name="update_requirements",
         description=(
-            "Call this when the candidate answered the CURRENT "
-            "QUESTION with real information (or explicitly said "
-            "they don't have it). Also fill any OTHER listed "
-            "fields they clearly volunteered in the same "
-            "utterance. Never call this for greetings or "
-            "meta-conversation alone."
+            "Call this when the user gave real information about the "
+            "apartment they want. Fill EVERY listed field they clearly "
+            "stated, including ones that answer later questions. Never "
+            "call this for greetings or meta-conversation alone."
         ),
         args_schema=UpdateModel,
     )
@@ -95,16 +136,11 @@ def _build_intent_tool(intents: list[dict]) -> StructuredTool | None:
     if not intents:
         return None
 
-    from typing import Literal
-
     ids = tuple(i["id"] for i in intents)
 
     IntentModel = create_model(
         "IntentMatch",
-        intent_id=(
-            Literal[ids],
-            Field(..., description="Which situation this is."),
-        ),
+        intent_id=(Literal[ids], Field(..., description="Which situation this is.")),
     )
 
     def match_intent(intent_id: str):
@@ -114,79 +150,61 @@ def _build_intent_tool(intents: list[dict]) -> StructuredTool | None:
         func=match_intent,
         name="match_intent",
         description=(
-            "Call this when the candidate said something that is "
-            "NOT an answer to the current question, but matches "
-            "one of the known situations below (e.g. they can't "
-            "hear, ask you to repeat, ask who's calling, ask to be "
-            "called later). Do not call this for a normal answer."
+            "Call this when the user said something that is NOT an answer "
+            "but matches one of the known situations (can't hear, asks to "
+            "repeat, needs a moment, wants to stop). Never call it for a "
+            "normal answer."
         ),
         args_schema=IntentModel,
     )
 
 
-def _describe_fields(fields: list[dict]) -> str:
+def _describe_intents(intents: list[dict]) -> str:
 
     return "\n".join(
-        f"- {f['name']} ({'list of strings' if f.get('multi') else 'string'}): {f['description']}"
-        for f in fields
+        f"- {i['id']}: {i['description']}\n  examples: {' | '.join(i.get('examples', []))}"
+        for i in intents
     )
 
 
-def _describe_intents(intents: list[dict]) -> str:
-
-    lines = []
-
-    for intent in intents:
-
-        examples = " | ".join(intent.get("examples", []))
-
-        lines.append(
-            f"- {intent['id']}: {intent['description']}\n"
-            f"  examples: {examples}"
-        )
-
-    return "\n".join(lines)
-
+# ============================================================
+# One extraction turn
+# ============================================================
 
 TURN_PROMPT = """
-You are handling one turn of an Egyptian Arabic recruitment phone
-interview.
+You are handling one turn of a voice conversation in which an
+assistant collects requirements for an apartment floor plan.
+The user speaks Egyptian Arabic or English.
 
-CURRENT QUESTION (what was just asked — this must be answered
-unless the candidate clearly already covered it in this utterance):
+CURRENT QUESTION (what was just said to the user):
 
 {question}
 
-CURRENT QUESTION FIELDS (at least one of these must be filled if
-the candidate is answering normally):
+CURRENT QUESTION FIELDS (at least one should be filled if the user is
+answering normally; empty means this is the user's first, open
+description of the apartment):
 
 {current_fields}
 
 Decide exactly ONE of three things:
 
-1. The candidate ANSWERED the current question (or explicitly said
-   they don't have the thing being asked about). They may ALSO
-   volunteer answers to later questions in the same utterance
-   (e.g. name + years of experience together)
-   -> call update_candidate_info with EVERY field they clearly
-      stated — current and future. Leave unmentioned fields null.
+1. The user gave information about the apartment
+   -> call update_requirements with EVERY field they clearly stated,
+      current and later ones. Leave everything else null.
+2. The user said something else that matches one of the known
+   situations below -> call match_intent
+3. Neither clearly applies -> call NOTHING
 
-2. The candidate said something else entirely — they can't hear,
-   ask you to repeat, ask who's calling, ask to be called later,
-   etc. — matching one of the situations below
-   -> call match_intent
+Never call both tools. Never guess a value that was not said.
 
-3. Neither of the above clearly applies
-   -> call NOTHING
-
-Never call both tools. Never guess a field value you are not
-confident about. Never invent values for fields they did not
-mention.
-
-ALL FIELDS YOU MAY FILL THIS TURN (current + still-empty later
-ones):
+ALL FIELDS YOU MAY FILL THIS TURN:
 
 {fields}
+
+KNOWN ROOMS (valid room ids for connection and room-choice fields;
+empty means the room set is not final, so leave those fields null):
+
+{rooms}
 
 KNOWN SITUATIONS (for match_intent):
 
@@ -194,18 +212,27 @@ KNOWN SITUATIONS (for match_intent):
 
 RULES:
 
-- "لسه متخرج" or "ممعنديش خبرة" for years_of_experience means "0".
-  Zero experience is a real answer, not a missing one.
-- For list fields, put each skill/tool as its own separate item.
+- Egyptian terms: "ريسبشن" = living room. "أمريكاني" or "مطبخ مفتوح" =
+  open kitchen. "مطبخ مقفول" = closed kitchen. "أوضة سفرة" = dining
+  room. "حمامين" = 2 bathrooms. "أوضتين" = 2 bedrooms.
+- "شقة ٣ أوض" or "3 rooms" with no other qualifier means 3 bedrooms
+  (the living room is counted separately).
+- Numbers may be spoken as words: واحد، اتنين، تلاتة، أربعة، خمسة،
+  ستة. Convert them to digits.
+- Only use "use_default_for" when the user explicitly leaves the
+  choice to you or says it doesn't matter.
+- For extra_rooms, an explicit "no extras" / "مفيش حاجة زيادة" means an
+  empty list, which is different from not mentioning extras.
+- A family size does NOT tell you the number of bedrooms. Do not
+  derive one from the other.
+- For room connections use only the ids under KNOWN ROOMS. "open"
+  or "من غير باب" = open_passage.
 - The speech comes from an imperfect speech-to-text system; extract
   what is clearly there and ignore obvious noise.
-- Only match an intent if the candidate's words clearly fit one of
-  the situations above — a real (even partial) answer to the
-  question always takes priority over an intent match.
-- Extra volunteered info is a bonus: still fill the current
-  question field(s) when they answered those too.
+- A real (even partial) answer always takes priority over an
+  intent match.
 
-CANDIDATE SAID:
+USER SAID:
 
 {transcript}
 """
@@ -213,206 +240,184 @@ CANDIDATE SAID:
 
 async def process_turn(
     question_text: str,
-    fields: list[dict],
+    slots: list[dict],
+    current_slots: list[dict],
     intents: list[dict],
     transcript: str,
-    current_fields: list[dict] | None = None,
+    rooms_context: str = "",
+    room_ids: list[str] | None = None,
 ) -> dict:
     """
-    One LLM call that decides between three outcomes, so a normal
-    turn never costs more than a single round trip:
+    One LLM call, three possible outcomes:
 
-        {"kind": "answer", "updates": {...}}
+        {"kind": "answer", "updates": {...}, "use_default_for": [...]}
         {"kind": "intent", "intent_id": "..."}
         {"kind": "none"}
-
-    `fields` may include later interview fields so volunteered
-    answers can be captured early. `current_fields` is what the
-    prompt highlights as required for this turn.
     """
 
-    current_fields = current_fields if current_fields is not None else fields
-
-    update_tool = _build_update_tool(fields)
+    update_tool = _build_update_tool(slots)
     intent_tool = _build_intent_tool(intents)
 
     tools = [update_tool] + ([intent_tool] if intent_tool else [])
 
     prompt = TURN_PROMPT.format(
         question=question_text,
-        current_fields=_describe_fields(current_fields),
-        fields=_describe_fields(fields),
-        intents=_describe_intents(intents),
+        current_fields=_describe_slots(current_slots) or "(none, open description)",
+        fields=_describe_slots(slots),
+        rooms=rooms_context or "(not final yet)",
+        intents=_describe_intents(intents) or "(none)",
         transcript=transcript,
     )
 
     response = await llm.bind_tools(tools).ainvoke(
-        [
-            SystemMessage(content=prompt),
-            HumanMessage(content=transcript),
-        ]
+        [SystemMessage(content=prompt), HumanMessage(content=transcript)]
     )
 
     print("[EXTRACTION] Tool calls:", response.tool_calls)
 
-    if not response.tool_calls:
-        return {"kind": "none"}
+    for tool_call in response.tool_calls or []:
 
-    for tool_call in response.tool_calls:
+        args = tool_call.get("args", {})
 
-        if tool_call["name"] == "match_intent":
+        if tool_call["name"] == "match_intent" and args.get("intent_id"):
+            return {"kind": "intent", "intent_id": args["intent_id"]}
 
-            intent_id = tool_call.get("args", {}).get("intent_id")
+        if tool_call["name"] == "update_requirements":
 
-            if intent_id:
-                return {"kind": "intent", "intent_id": intent_id}
+            updates = _clean_updates(args, slots, set(room_ids or []))
 
-        if tool_call["name"] == "update_candidate_info":
+            allowed = {s["id"] for s in slots}
+            defaults = [d for d in (args.get("use_default_for") or []) if d in allowed]
 
-            updates = _clean_updates(
-                tool_call.get("args", {}), fields
-            )
-
-            if updates:
-                return {"kind": "answer", "updates": updates}
+            if updates or defaults:
+                return {"kind": "answer", "updates": updates, "use_default_for": defaults}
 
     return {"kind": "none"}
 
 
-def _clean_updates(args: dict, fields: list[dict]) -> dict:
+# ============================================================
+# Cleaning: never trust the model's output blindly
+# ============================================================
 
-    allowed = {f["name"] for f in fields}
+def _clean_updates(args: dict, slots: list[dict], room_ids: set[str]) -> dict:
 
+    by_id = {s["id"]: s for s in slots}
     updates = {}
 
-    for name, value in args.items():
+    for sid, value in args.items():
 
-        if name not in allowed or value is None:
+        slot = by_id.get(sid)
+
+        if slot is None or value is None:
             continue
 
-        if isinstance(value, str):
+        cleaned = _clean_value(slot, value, room_ids)
 
-            value = value.strip()
-
-            if not value:
-                continue
-
-            if value.upper() == "NONE":
-                value = NONE_VALUE
-
-        elif isinstance(value, list):
-
-            cleaned = [
-                str(item).strip()
-                for item in value
-                if item is not None and str(item).strip()
-            ]
-
-            if not cleaned:
-                continue
-
-            if len(cleaned) == 1 and cleaned[0].upper() == "NONE":
-                value = NONE_VALUE
-            else:
-                value = [
-                    item for item in cleaned if item.upper() != "NONE"
-                ]
-
-                if not value:
-                    continue
-
-        updates[name] = value
+        if cleaned is not None:
+            updates[sid] = cleaned
 
     return updates
 
 
+def _clean_value(slot: dict, value, room_ids: set[str]):
+
+    kind = slot["type"]
+
+    if kind in ("integer", "number"):
+
+        try:
+            number = float(normalize_digits(str(value)))
+        except ValueError:
+            return None
+
+        if "min" in slot and number < slot["min"]:
+            return None
+
+        if "max" in slot and number > slot["max"]:
+            return None
+
+        return int(round(number)) if kind == "integer" else number
+
+    if kind == "boolean":
+        return value if isinstance(value, bool) else None
+
+    if kind == "enum":
+
+        text = str(value).strip()
+        options = slot.get("options")
+
+        if options:
+            return text if text in options else None
+
+        return text if text in room_ids else None
+
+    if kind == "multi_enum":
+
+        if not isinstance(value, list):
+            return None
+
+        items = [
+            str(i).strip()
+            for i in value
+            if str(i).strip() and str(i).strip().upper() != "NONE"
+        ]
+
+        valid = [i for i in dict.fromkeys(items) if i in slot["options"]]
+
+        # [] is a real answer ("no extras"); a non-empty list with
+        # nothing valid in it is just noise.
+        return valid if valid or not items else None
+
+    if kind == "edge_list":
+
+        if not isinstance(value, list):
+            return None
+
+        edges = []
+
+        for item in value:
+
+            if hasattr(item, "model_dump"):
+                item = item.model_dump()
+
+            if not isinstance(item, dict):
+                continue
+
+            a, b = item.get("room_a"), item.get("room_b")
+            via = item.get("via", "door")
+
+            if a in room_ids and b in room_ids and a != b and via in VIA_VALUES:
+                edges.append({"from": a, "to": b, "via": via})
+
+        return edges or None
+
+    return None
+
+
 # ============================================================
-# Summary segments
+# Reply to a yes/no style question (summary, soft warnings)
 # ============================================================
 
-def format_value(value) -> str:
+CONFIRM_PROMPT = """
+You are classifying a user's reply to something an assistant just said
+while collecting requirements for an apartment floor plan. The user
+speaks Egyptian Arabic or English.
 
-    if isinstance(value, list):
-        return "، ".join(str(item) for item in value)
+WHAT THE ASSISTANT JUST SAID:
 
-    return str(value)
-
-
-def build_summary_segments(
-    candidate: dict,
-    interview_manager,
-) -> list[dict]:
-    """
-    Assembles the full summary as a segment list: cached intro,
-    then for every field the candidate actually has a value for,
-    either its fully-cached "none" line or its cached label followed
-    by the one genuinely dynamic piece (the value itself), then the
-    cached confirm line.
-
-    A field never mentioned at all is skipped entirely, not read
-    back as empty.
-    """
-
-    segments = list(interview_manager.summary_config["intro"])
-
-    for label in interview_manager.summary_config["labels"]:
-
-        field_name = label["field"]
-
-        value = candidate.get(field_name)
-
-        if value is None:
-            continue
-
-        if isinstance(value, (list, str)) and not value:
-            continue
-
-        if value == NONE_VALUE:
-
-            none_line = interview_manager.none_line_for_field(
-                field_name
-            )
-
-            if none_line:
-                segments.append(
-                    {"type": "static", **none_line}
-                )
-
-            continue
-
-        segments.append(
-            {"type": "static", "id": label["id"], "text": label["text"]}
-        )
-
-        segments.append(
-            {"type": "value_text", "text": format_value(value)}
-        )
-
-    segments.extend(interview_manager.summary_config["confirm"])
-
-    return segments
-
-
-# ============================================================
-# Summary reply classification
-# ============================================================
-
-SUMMARY_REPLY_PROMPT = """
-You are classifying an Egyptian Arabic candidate's reply to a
-spoken summary of their interview answers.
+{context}
 
 Decide exactly one of two things:
 
-1. The candidate CONFIRMED the summary is correct and wants to
-   finish  -> action = "confirm"
-2. The candidate wants to CORRECT one specific field
+1. The user ACCEPTS it as it is / says it is fine and wants to move on
+   -> action = "confirm"
+2. The user wants to CHANGE one specific field
    -> action = "correct", field = <field name>
-   - If they ALSO gave the new value in the same utterance,
-     set new_value to that value ONLY (not the whole sentence).
-   - If they only asked to change a field without saying the
-     new value, leave new_value empty/null.
+   - If they ALSO gave the new value in the same utterance, set
+     new_value to that value ONLY (not the whole sentence).
+   - If they only asked to change it, leave new_value null.
 
-Always call resolve_summary_reply.
+Always call resolve_reply.
 
 FIELDS THAT CAN BE CORRECTED:
 
@@ -420,132 +425,68 @@ FIELDS THAT CAN BE CORRECTED:
 
 EXAMPLES:
 
-"تمام و صح و شكرا"                    -> confirm
-"ايوة كده تمام خلاص"                  -> confirm
-"غيرلي المؤهل"                        -> correct, education_level
-"لأ عايز أعدل سنين الخبرة"             -> correct, years_of_experience
-"اسمي غلط"                            -> correct, candidate_name
-"عدل الاسم اسمي طاهر"                 -> correct, candidate_name, new_value="طاهر"
-"update the name my name is taher"    -> correct, candidate_name, new_value="taher"
-"غيرلي الاسم، أنا اسمي أحمد علي"       -> correct, candidate_name, new_value="أحمد علي"
-"عدل المهارات لبايثون وجافا"           -> correct, key_skills, new_value="بايثون، جافا"
-"عايز أغير المجال لداتا ساينس"         -> correct, target_domain, new_value="داتا ساينس"
+"تمام كده صح"                         -> confirm
+"أيوه كده كويس كمل"                   -> confirm
+"غير عدد الحمامات"                    -> correct, num_bathrooms
+"خليهم ٣ أوض نوم"                     -> correct, num_bedrooms, new_value="3"
+"المطبخ يبقى مفتوح"                   -> correct, kitchen_type, new_value="open"
+"عايز أغير الوصلات"                   -> correct, room_connections
+"make it two bathrooms"               -> correct, num_bathrooms, new_value="2"
 
-CANDIDATE REPLY:
+USER REPLY:
 
 {transcript}
 """
 
 
-def _build_summary_reply_tool(fields: list[dict]) -> StructuredTool:
-
-    from typing import Literal
+def _build_reply_tool(fields: list[dict]) -> StructuredTool:
 
     names = tuple(f["name"] for f in fields)
 
     Model = create_model(
-        "SummaryReply",
+        "ConfirmReply",
         action=(
-            str,
-            Field(
-                ...,
-                description=(
-                    "'confirm' to finish, or 'correct' to change "
-                    "one field."
-                ),
-            ),
+            Literal["confirm", "correct"],
+            Field(..., description="'confirm' to accept, 'correct' to change one field."),
         ),
         field=(
             Literal[names] | None,
-            Field(
-                default=None,
-                description="Required when action is 'correct'.",
-            ),
+            Field(default=None, description="Required when action is 'correct'."),
         ),
         new_value=(
             str | None,
             Field(
                 default=None,
                 description=(
-                    "The new field value if the candidate said it "
-                    "in the same utterance. For list fields, join "
-                    "items with an Arabic comma (،). Leave null "
-                    "when they only asked to change the field."
+                    "New value if said in the same utterance. For list "
+                    "fields join items with an Arabic comma. Null when "
+                    "they only asked to change the field."
                 ),
             ),
         ),
     )
 
-    def resolve_summary_reply(
-        action: str,
-        field: str | None = None,
-        new_value: str | None = None,
-    ):
-        return {
-            "action": action,
-            "field": field,
-            "new_value": new_value,
-        }
+    def resolve_reply(action: str, field: str | None = None, new_value: str | None = None):
+        return {"action": action, "field": field, "new_value": new_value}
 
     return StructuredTool.from_function(
-        func=resolve_summary_reply,
-        name="resolve_summary_reply",
-        description="Record the candidate's reply to the summary.",
+        func=resolve_reply,
+        name="resolve_reply",
+        description="Record the user's reply.",
         args_schema=Model,
     )
 
 
-def parse_inline_correction_value(
-    field: dict,
-    new_value: str,
-) -> str | list[str] | None:
-    """
-    Turn the LLM's inline new_value string into the stored
-    candidate shape for this field (string, list, or NONE_VALUE).
-    """
-
-    text = new_value.strip()
-
-    if not text:
-        return None
-
-    if text.upper() == "NONE":
-        return NONE_VALUE
-
-    if field.get("multi"):
-
-        parts = [
-            part.strip()
-            for part in text.replace(",", "،").split("،")
-            if part.strip()
-        ]
-
-        if not parts:
-            return None
-
-        if len(parts) == 1 and parts[0].upper() == "NONE":
-            return NONE_VALUE
-
-        return [
-            part for part in parts if part.upper() != "NONE"
-        ] or None
-
-    return text
-
-
-async def classify_summary_reply(
+async def classify_confirmation_reply(
     transcript: str,
-    fields: list[dict],
+    context_text: str,
+    correctable: list[dict],
 ) -> dict:
     """
     Returns:
         {"action": "confirm"}
-        {"action": "correct", "field": ..., "new_value": str|None}
+        {"action": "correct", "field": ..., "new_value": str | None}
         {"action": "unclear"}
-
-    When correcting, new_value is set only if the candidate gave
-    the replacement in the same utterance — the caller then applies
-    it without re-asking the question.
     """
 
     transcript = transcript.strip()
@@ -553,49 +494,105 @@ async def classify_summary_reply(
     if not transcript:
         return {"action": "unclear", "field": None, "new_value": None}
 
-    correctable = [f for f in fields if f.get("asked_by")]
+    described = "\n".join(f"- {f['name']} ({f['label']})" for f in correctable)
 
-    described = "\n".join(
-        f"- {f['name']} — {f['label']}" for f in correctable
-    )
-
-    tool = _build_summary_reply_tool(correctable)
-
-    response = await llm.bind_tools([tool]).ainvoke(
+    response = await llm.bind_tools([_build_reply_tool(correctable)]).ainvoke(
         [
             SystemMessage(
-                content=SUMMARY_REPLY_PROMPT.format(
-                    fields=described, transcript=transcript
+                content=CONFIRM_PROMPT.format(
+                    context=context_text, fields=described, transcript=transcript
                 )
             ),
             HumanMessage(content=transcript),
         ]
     )
 
-    print("[SUMMARY] Tool calls:", response.tool_calls)
+    print("[CONFIRM] Tool calls:", response.tool_calls)
 
     if not response.tool_calls:
         return {"action": "unclear", "field": None, "new_value": None}
 
     args = response.tool_calls[0].get("args", {})
 
-    action = args.get("action")
-    field = args.get("field")
+    action, field = args.get("action"), args.get("field")
     new_value = args.get("new_value")
-
-    if isinstance(new_value, str):
-        new_value = new_value.strip() or None
-    else:
-        new_value = None
+    new_value = new_value.strip() if isinstance(new_value, str) and new_value.strip() else None
 
     if action == "confirm":
         return {"action": "confirm", "field": None, "new_value": None}
 
     if action == "correct" and field:
-        return {
-            "action": "correct",
-            "field": field,
-            "new_value": new_value,
-        }
+        return {"action": "correct", "field": field, "new_value": new_value}
 
     return {"action": "unclear", "field": None, "new_value": None}
+
+
+# ============================================================
+# Inline correction: "make it 3 bedrooms" -> 3
+# ============================================================
+
+YES_WORDS = {"yes", "true", "أيوه", "ايوه", "أيوة", "ايوة", "اه", "آه", "نعم", "أيوا"}
+NO_WORDS = {"no", "false", "لا", "لأ", "لاء"}
+
+
+def parse_inline_correction_value(manager, slot: dict, text: str, room_ids: list[str]):
+    """
+    Turn the LLM's new_value string into the stored value for this
+    slot, or None if it can't be parsed (the caller then simply asks
+    the slot's own question again).
+    """
+
+    text = normalize_digits(text.strip())
+
+    if not text:
+        return None
+
+    kind = slot["type"]
+
+    if kind in ("integer", "number"):
+
+        match = re.search(r"\d+(?:\.\d+)?", text)
+
+        if not match:
+            return None
+
+        number = float(match.group())
+
+        if "min" in slot and number < slot["min"]:
+            return None
+
+        if "max" in slot and number > slot["max"]:
+            return None
+
+        return int(number) if kind == "integer" else number
+
+    if kind == "boolean":
+
+        lowered = text.lower()
+
+        if lowered in YES_WORDS:
+            return True
+
+        if lowered in NO_WORDS:
+            return False
+
+        return None
+
+    if kind == "enum":
+
+        if slot.get("options"):
+            return manager.match_option(slot, text)
+
+        return text if text in room_ids else None
+
+    if kind == "multi_enum":
+
+        parts = [p.strip() for p in text.replace(",", "،").split("،") if p.strip()]
+        matched = [manager.match_option(slot, p) for p in parts]
+
+        if parts and all(matched):
+            return list(dict.fromkeys(matched))
+
+        return None
+
+    return None

@@ -1,448 +1,383 @@
 {
-  "mode": "sequential",
+  "schema_version": "1.0",
+  "domain": "apartment_floor_plan",
+  "languages": ["en", "ar_eg"],
 
-  "settings": {
-    "silence_step_seconds": 5,
-    "max_retries_per_question": 3,
-    "skip_optional_after_max_retries": true
+  "messages": {
+    "greeting":        { "en": "Hello! Tell me about the apartment you want, and I will ask about anything that is missing.", "ar_eg": "أهلاً! قولي عايز شقة عاملة إزاي، وأنا هسألك عن أي حاجة ناقصة." },
+    "joiner":          { "en": "Also,", "ar_eg": "وكمان،" },
+    "completion":      { "en": "Great, I have everything I need. I am generating your floor plan now.", "ar_eg": "تمام، معايا كل اللي محتاجه. هبدأ أعمل مخطط الشقة دلوقتي." },
+    "cannot_continue": { "en": "Sorry, I could not get the information I need. Let us try again later.", "ar_eg": "معلش، مقدرتش آخد المعلومات اللي محتاجاها. تعالى نحاول تاني بعدين." },
+    "assumed_tag":     { "en": "(assumed)", "ar_eg": "(افتراضي)" },
+    "yes":             { "en": "yes", "ar_eg": "أيوه" },
+    "no":              { "en": "no", "ar_eg": "لأ" },
+    "none":            { "en": "none", "ar_eg": "مفيش" },
+    "units": {
+      "m2":  { "en": "m2", "ar_eg": "متر مربع" },
+      "EGP": { "en": "EGP", "ar_eg": "جنيه" }
+    },
+    "summary_labels": {
+      "property_type":      { "en": "Property type", "ar_eg": "نوع العقار" },
+      "total_area_m2":      { "en": "Area", "ar_eg": "المساحة" },
+      "num_bedrooms":       { "en": "Bedrooms", "ar_eg": "أوض النوم" },
+      "num_bathrooms":      { "en": "Bathrooms", "ar_eg": "الحمامات" },
+      "master_has_ensuite": { "en": "Master bedroom with private bathroom", "ar_eg": "أوضة النوم الرئيسية بحمام خاص" },
+      "kitchen_type":       { "en": "Kitchen", "ar_eg": "المطبخ" },
+      "has_living_room":    { "en": "Separate living room", "ar_eg": "ريسبشن منفصل" },
+      "extra_rooms":        { "en": "Extra spaces", "ar_eg": "مساحات زيادة" },
+      "num_balconies":      { "en": "Balconies", "ar_eg": "البلكونات" },
+      "entrance_room":      { "en": "Front door opens to", "ar_eg": "باب الشقة بيفتح على" },
+      "connections_mode":   { "en": "Room connections", "ar_eg": "وصلات الأوض" },
+      "room_connections":   { "en": "Connections you specified", "ar_eg": "الوصلات اللي حددتها" },
+      "bedroom_access":     { "en": "Bedrooms open onto", "ar_eg": "أوض النوم بتفتح على" },
+      "bathroom_access":    { "en": "Main bathroom reached from", "ar_eg": "الحمام الرئيسي بيتدخل من" },
+      "family_size":        { "en": "Family size", "ar_eg": "عدد الأفراد" },
+      "budget_egp":         { "en": "Budget", "ar_eg": "الميزانية" }
+    },
+    "option_names": {
+      "apartment": { "en": "apartment", "ar_eg": "شقة" },
+      "duplex":    { "en": "duplex", "ar_eg": "دوبلكس" },
+      "studio":    { "en": "studio", "ar_eg": "ستوديو" },
+      "open":      { "en": "open kitchen", "ar_eg": "أمريكاني مفتوح" },
+      "closed":    { "en": "closed kitchen", "ar_eg": "مقفول بباب" },
+      "auto":      { "en": "arranged automatically", "ar_eg": "هرتبها أوتوماتيك" },
+      "manual":    { "en": "as you specified", "ar_eg": "زي ما حددت" },
+      "hallway":   { "en": "a hallway", "ar_eg": "طرقة" }
+    }
   },
-
-  "_comment_segments": "Every spoken line is a list of segments. A 'static' segment has a stable id and is pre-generated once, ever. A 'value' segment is the candidate's own extracted data - short, synthesized live, and cacheable by text hash since names/values repeat across calls. This is what keeps the summary fast while still personalised.",
-
-  "fields": [
-    {
-      "name": "candidate_name",
-      "required": true,
-      "multi": false,
-      "label": "الاسم",
-      "none_text": "مفيش اسم",
-      "description": "The candidate's full name.",
-      "asked_by": "q1_name"
-    },
-    {
-      "name": "target_domain",
-      "required": true,
-      "multi": false,
-      "label": "المجال",
-      "none_text": "مفيش مجال محدد",
-      "description": "The field, domain or job title the candidate is interested in.",
-      "asked_by": "q2_domain"
-    },
-    {
-      "name": "experience_summary",
-      "required": false,
-      "multi": false,
-      "label": "الخبرة",
-      "none_text": "مفيش خبرة",
-      "description": "A short free-text summary of what the candidate has worked on: companies, projects, responsibilities.",
-      "asked_by": "q3_experience_story"
-    },
-    {
-      "name": "years_of_experience",
-      "required": true,
-      "multi": false,
-      "label": "مدة الخبرة",
-      "none_text": "مفيش خبرة",
-      "description": "How long the candidate has worked or trained in the field. Zero is a valid answer for a fresh graduate.",
-      "asked_by": "q4_experience_duration"
-    },
-    {
-      "name": "education_level",
-      "required": true,
-      "multi": false,
-      "label": "المؤهل",
-      "none_text": "مفيش مؤهل",
-      "description": "The candidate's degree and specialisation, or highest qualification.",
-      "asked_by": "q5_education"
-    },
-    {
-      "name": "key_skills",
-      "required": true,
-      "multi": true,
-      "label": "المهارات",
-      "none_text": "مفيش مهارات",
-      "description": "Skills and programming languages, each one a separate item.",
-      "asked_by": "q6_skills_tools"
-    },
-    {
-      "name": "tools_technologies",
-      "required": false,
-      "multi": true,
-      "label": "الأدوات",
-      "none_text": "مفيش أدوات",
-      "description": "Tools, frameworks and software the candidate uses, each one a separate item.",
-      "asked_by": "q6_skills_tools"
-    },
-    {
-      "name": "english_proficiency",
-      "required": true,
-      "multi": false,
-      "label": "مستوى الإنجليزي",
-      "none_text": "مفيش إنجليزي",
-      "description": "The candidate's English level, especially reading and writing.",
-      "asked_by": "q7_english"
-    },
-    {
-      "name": "notes",
-      "required": false,
-      "multi": false,
-      "label": "ملاحظات",
-      "none_text": "مفيش ملاحظات",
-      "description": "Anything else relevant the candidate mentioned that does not fit another field.",
-      "asked_by": null
-    }
-  ],
-
-  "questions": [
-    {
-      "id": "q1_name",
-      "is_welcome": true,
-      "target_field": "candidate_name",
-      "segments": [
-        {
-          "type": "static",
-          "id": "q1_name__s1",
-          "text": "مساء الخير، مع حَضْرِتَكْ Mohamed من قسم التوظيف في شركة جي بي كورب. ممكن أعرف اسم حضرتك؟"
-        }
-      ],
-      "repeat_segments": [
-        {
-          "type": "static",
-          "id": "q1_name__repeat",
-          "text": "ممكن أعرف اسم حضرتك؟"
-        }
-      ]
-    },
-    {
-      "id": "q2_domain",
-      "target_field": "target_domain",
-      "segments": [
-        {
-          "type": "live",
-          "template": "أهلا يا {candidate_name}",
-          "_comment": "Synthesized fresh each call (no TTS cache). {candidate_name} speaks first name only."
-        },
-        {
-          "type": "static",
-          "id": "q2_domain__s2",
-          "text": "حضرتك مهتم بأنهي مجال أو وظيفة؟"
-        }
-      ],
-      "repeat_segments": [
-        {
-          "type": "static",
-          "id": "q2_domain__repeat",
-          "text": "حضرتك مهتم بأنهي مجال أو وظيفة؟"
-        }
-      ]
-    },
-    {
-      "id": "q3_experience_story",
-      "target_field": "experience_summary",
-      "long_answer": true,
-      "segments": [
-        {
-          "type": "static",
-          "id": "q3_experience_story__s1",
-          "text": "تمام، ممكن تحكيلي شوية عن خبرتك في المجال ده؟"
-        }
-      ]
-    },
-    {
-      "id": "q4_experience_duration",
-      "target_field": "years_of_experience",
-      "segments": [
-        {
-          "type": "static",
-          "id": "q4_experience_duration__s1",
-          "text": "اشتغلت أو اتدربت في المجال ده لمدة قد إيه؟"
-        }
-      ]
-    },
-    {
-      "id": "q5_education",
-      "target_field": "education_level",
-      "segments": [
-        {
-          "type": "static",
-          "id": "q5_education__s1",
-          "text": "ممكن أعرف مؤهلك الدراسي وتخصصك؟"
-        }
-      ]
-    },
-    {
-      "id": "q6_skills_tools",
-      "target_fields": [
-        "key_skills",
-        "tools_technologies"
-      ],
-      "segments": [
-        {
-          "type": "static",
-          "id": "q6_skills_tools__s1",
-          "text": "إيه أهم المهارات أو الأدوات اللي بتستخدمها في شغلك؟"
-        }
-      ]
-    },
-    {
-      "id": "q7_english",
-      "target_field": "english_proficiency",
-      "segments": [
-        {
-          "type": "static",
-          "id": "q7_english__s1",
-          "text": "طيب ومستوى الإنجليزي عند حضرتك عامل إيه؟"
-        }
-      ]
-    }
-  ],
-
-  "summary": {
-    "_comment": "Assembled at runtime: every label is a cached static segment, only the values are live. Fields the candidate never answered are skipped entirely.",
-    "processing": [
-      {
-        "type": "static",
-        "id": "summary__processing",
-        "text": "لحظات يا فندم، هراجع مع حضرتك البيانات بسرعة وأدخلها على السيستم."
-      }
-    ],
-    "_comment_processing": "Spoken once before the summary (via intent_prompt) while value clips synthesize, so the candidate hears a human pause instead of silence.",
-    "intro": [
-      {
-        "type": "static",
-        "id": "summary__intro1",
-        "text": "تمام يا, "
-      },
-      {
-        "type": "value",
-        "field": "candidate_name"
-      },
-      {
-        "type": "static",
-        "id": "summary__intro2",
-        "text": "خليني أراجع معاك البيانات اللي سجلتها بسرعة."
-      }
-    ],
-    "labels": [
-      {
-        "field": "target_domain",
-        "id": "summary__label_target_domain",
-        "text": "المجال اللي بتدور عليه:"
-      },
-      {
-        "field": "experience_summary",
-        "id": "summary__label_experience_summary",
-        "text": "خبرتك:"
-      },
-      {
-        "field": "years_of_experience",
-        "id": "summary__label_years_of_experience",
-        "text": "مدة الخبرة:"
-      },
-      {
-        "field": "education_level",
-        "id": "summary__label_education_level",
-        "text": "المؤهل:"
-      },
-      {
-        "field": "key_skills",
-        "id": "summary__label_key_skills",
-        "text": "المهارات:"
-      },
-      {
-        "field": "tools_technologies",
-        "id": "summary__label_tools_technologies",
-        "text": "الأدوات:"
-      },
-      {
-        "field": "english_proficiency",
-        "id": "summary__label_english_proficiency",
-        "text": "مستوى الإنجليزي:"
-      }
-    ],
-    "none_prefix": {
-      "id": "summary__none_prefix",
-      "text": "حضرتك قلت إن"
-    },
-    "confirm": [
-      {
-        "type": "static",
-        "id": "summary__confirm",
-        "text": "لو كله تمام قول لي تمام، ولو في حاجة عايز تعدلها قولي أغيّر إيه."
-      }
-    ]
-  },
-
-  "completion": [
-    {
-      "type": "static",
-      "id": "completion__s1",
-      "text": "تمام، شكراً جزيلاً لوقت حضرتك يا"
-    },
-    {
-      "type": "value",
-      "field": "candidate_name"
-    },
-    {
-      "type": "static",
-      "id": "completion__s2",
-      "text": "بياناتك اتسجلت، وهنتواصل معاك قريب لو في فرصة مناسبة. مع السلامة."
-    }
-  ],
-
-  "silence_prompts": [
-    {
-      "id": "silence_1",
-      "text": "حضرتك سامعني؟",
-      "end_call": false
-    },
-    {
-      "id": "silence_2",
-      "text": "ياريت لو حضرتك سامعني تجاوب على الأسئلة.",
-      "end_call": false
-    },
-    {
-      "id": "silence_3",
-      "text": "واضح إن في مشكلة في المكالمة، هنتصل بحضرتك في وقت تاني. مع السلامة.",
-      "end_call": true
-    }
-  ],
-
-  "system_messages": [
-    {
-      "id": "no_speech_retry",
-      "text": "معلش، مسمعتش حضرتك كويس.",
-      "then": "repeat_question"
-    },
-    {
-      "id": "wrong_answer_retry",
-      "text": "معلش، الإجابة دي مش بتجاوب على السؤال ده.",
-      "then": "repeat_question"
-    }
-  ],
 
   "intents": [
-    {
-      "id": "cannot_hear",
-      "description": "The candidate says they cannot hear the agent, the line is bad, the voice is unclear or cutting out.",
-      "examples": [
-        "أنا مش سامعك كويس",
-        "الصوت مقطع",
-        "مش واضح",
-        "في تشويش"
-      ],
-      "text": "معلش، طيب قولي إيه اللي مش سامعه وأنا هعيده لحضرتك تاني وبصوت أوضح.",
-      "then": "repeat_question"
-    },
-    {
-      "id": "repeat_request",
-      "description": "The candidate asks the agent to repeat the question.",
-      "examples": [
-        "ممكن تعيد",
-        "تاني لو سمحت",
-        "إيه السؤال"
-      ],
-      "text": "من عينيا، هعيد السؤال.",
-      "then": "repeat_question"
-    },
-    {
-      "id": "not_understood",
-      "description": "The candidate did not understand what is being asked, or asks what the question means.",
-      "examples": [
-        "مش فاهم قصدك",
-        "يعني إيه",
-        "مش فاهم السؤال"
-      ],
-      "text": "معلش، خليني أوضحلك السؤال تاني.",
-      "then": "repeat_question"
-    },
-    {
-      "id": "ask_wait",
-      "description": "The candidate asks for a moment, says hold on, or needs time to think.",
-      "examples": [
-        "ثانية واحدة",
-        "استنى شوية",
-        "خليني أفتكر"
-      ],
-      "text": "خد وقتك يا فندم، أنا مستنيك.",
-      "then": "wait"
-    },
-    {
-      "id": "who_are_you",
-      "description": "The candidate asks who is calling, which company, or whether this is a real person.",
-      "examples": [
-        "مين معايا",
-        "إنت مين",
-        "شركة إيه"
-      ],
-      "text": "أنا Mohamed من قسم التوظيف في شركة جي بي كورب، وبنجمع بيانات المتقدمين عشان نرشحلهم أنسب فرص شغل عندنا.",
-      "then": "repeat_question"
-    },
-    {
-      "id": "why_asking",
-      "description": "The candidate asks why this information is needed, or raises a privacy concern.",
-      "examples": [
-        "ليه بتسألني كده",
-        "البيانات دي هتروح فين",
-        "مش عايز أقول"
-      ],
-      "text": "البيانات دي بتستخدم بس جوه الشركة عشان نرشحلك أنسب فرصة شغل، ومش بتتشارك مع حد بره.",
-      "then": "repeat_question"
-    },
-    {
-      "id": "skip_question",
-      "description": "The candidate refuses to answer this specific question or asks to move on.",
-      "examples": [
-        "مش عايز أجاوب على دي",
-        "عدي السؤال ده",
-        "بعدين"
-      ],
-      "text": "مفيش مشكلة، هعدي السؤال ده.",
-      "then": "skip_question"
-    },
-    {
-      "id": "call_later",
-      "description": "The candidate is busy right now and asks to be called at another time.",
-      "examples": [
-        "أنا مشغول دلوقتي",
-        "كلمني بعدين",
-        "مش وقته"
-      ],
-      "text": "تمام، هنتصل بحضرتك في وقت تاني. شكراً لوقتك، مع السلامة.",
-      "then": "end_call"
-    },
-    {
-      "id": "not_interested",
-      "description": "The candidate says they are not interested, not looking for a job, or asks not to be contacted.",
-      "examples": [
-        "مش مهتم",
-        "مش بدور على شغل",
-        "متكلمنيش تاني"
-      ],
-      "text": "تمام، شكراً لوقت حضرتك. لو غيرت رأيك تقدر تتواصل معانا في أي وقت. مع السلامة.",
-      "then": "end_call"
-    },
-    {
-      "id": "talk_to_human",
-      "description": "The candidate asks to speak with a real person instead.",
-      "examples": [
-        "عايز أكلم حد حقيقي",
-        "وصلني بموظف",
-        "مش عايز أتكلم مع روبوت"
-      ],
-      "text": "تمام، هسجل طلب حضرتك وزميل من الفريق هيتواصل معاك في أقرب وقت. خليني بس أكمل البيانات الأساسية معاك.",
-      "then": "repeat_question"
-    },
-    {
-      "id": "greeting",
-      "description": "The candidate greets the agent or exchanges pleasantries without answering.",
-      "examples": [
-        "أهلاً بيك",
-        "إزيك",
-        "مساء النور"
-      ],
-      "text": "أهلاً بحضرتك.",
-      "then": "repeat_question"
+    { "id": "cant_hear", "description": "The person cannot hear or the audio is unclear.",
+      "examples": ["مش سامعك", "الصوت مش واضح", "I can't hear you"],
+      "text": { "en": "Sorry about that, let me say it again.", "ar_eg": "معلش، هعيد تاني." }, "then": "repeat_question" },
+    { "id": "repeat", "description": "The person asks to repeat the question.",
+      "examples": ["ممكن تعيد؟", "قولي تاني", "what did you say"],
+      "text": { "en": "Sure.", "ar_eg": "حاضر." }, "then": "repeat_question" },
+    { "id": "wait", "description": "The person asks for a moment to think.",
+      "examples": ["ثانية واحدة", "استنى لحظة", "give me a second"],
+      "text": { "en": "Take your time.", "ar_eg": "خد وقتك." }, "then": "wait" },
+    { "id": "end_call", "description": "The person wants to stop the conversation.",
+      "examples": ["مش عايز أكمل", "خلاص كفاية", "I want to stop"],
+      "text": { "en": "No problem, thank you. Goodbye.", "ar_eg": "ولا يهمك، شكراً ليك. مع السلامة." }, "then": "end_call" }
+  ],
+
+  "policy": {
+    "max_questions_per_turn": 2,
+    "ask_order": ["basics", "rooms", "kitchen_living", "extras", "connections"],
+    "optional_slots_to_ask": ["total_area_m2", "master_has_ensuite", "extra_rooms"],
+    "on_user_says_you_decide": "use_default_and_mark_assumed",
+    "on_unclear_answer": "reprompt_once_then_use_default_if_available",
+    "max_reprompts_per_slot": 2,
+    "never_ask_if_already_extracted": true,
+    "confirm_before_generation": true,
+    "confirmation_question": {
+      "en": "Here is a summary of what you asked for: {summary}. Do you want to change or add anything before I generate the plan?",
+      "ar_eg": "ده ملخص اللي طلبته: {summary}. عايز تغير أو تضيف حاجة قبل ما أعمل المخطط؟"
     }
+  },
+
+  "room_types": {
+    "hallway":  { "resplan_label": null, "name": { "en": "hallway", "ar_eg": "طرقة" } },
+    "bedroom":  { "resplan_label": "bedroom",  "name": { "en": "bedroom",     "ar_eg": "أوضة نوم" } },
+    "bathroom": { "resplan_label": "bathroom", "name": { "en": "bathroom",    "ar_eg": "حمام" } },
+    "kitchen":  { "resplan_label": "kitchen",  "name": { "en": "kitchen",     "ar_eg": "مطبخ" } },
+    "living":   { "resplan_label": "living",   "name": { "en": "living room", "ar_eg": "ريسبشن / أوضة معيشة" } },
+    "balcony":  { "resplan_label": "balcony",  "name": { "en": "balcony",     "ar_eg": "بلكونة" } },
+    "dining":   { "resplan_label": null,       "name": { "en": "dining room", "ar_eg": "أوضة سفرة" } },
+    "storage":  { "resplan_label": null,       "name": { "en": "storage",     "ar_eg": "مخزن" } },
+    "laundry":  { "resplan_label": null,       "name": { "en": "laundry",     "ar_eg": "غسيل" } }
+  },
+
+  "connection_types": {
+    "door":         { "en": "door",         "ar_eg": "باب" },
+    "open_passage": { "en": "open passage", "ar_eg": "مفتوحة على بعض (من غير باب)" },
+    "none":         { "en": "not connected", "ar_eg": "مش متوصلين" }
+  },
+
+  "slots": [
+    {
+      "id": "property_type",
+      "group": "basics",
+      "required": false,
+      "type": "enum",
+      "options": ["apartment", "duplex", "studio"],
+      "default": "apartment",
+      "ask_when": [],
+      "question": {
+        "en": "Is this a regular apartment, a duplex, or a studio?",
+        "ar_eg": "ده شقة عادية، دوبلكس، ولا ستوديو؟"
+      },
+      "extraction_hints": {
+        "en": ["apartment", "flat", "duplex", "studio"],
+        "ar_eg": ["شقة", "دوبلكس", "ستوديو"]
+      }
+    },
+    {
+      "id": "total_area_m2",
+      "group": "basics",
+      "required": false,
+      "type": "number",
+      "min": 30,
+      "max": 600,
+      "unit": "m2",
+      "default": null,
+      "ask_when": [],
+      "question": {
+        "en": "Roughly how big should the apartment be in square meters?",
+        "ar_eg": "تقريباً مساحة الشقة كام متر مربع؟"
+      },
+      "reprompt": {
+        "en": "Just a rough number is fine, for example 120 m2.",
+        "ar_eg": "رقم تقريبي كفاية، زي ١٢٠ متر."
+      },
+      "extraction_hints": {
+        "en": ["m2", "sqm", "square meters", "area"],
+        "ar_eg": ["متر", "م٢", "مساحة"]
+      }
+    },
+    {
+      "id": "num_bedrooms",
+      "group": "rooms",
+      "required": true,
+      "type": "integer",
+      "min": 1,
+      "max": 8,
+      "default": null,
+      "ask_when": [],
+      "question": {
+        "en": "How many bedrooms do you need?",
+        "ar_eg": "محتاج كام أوضة نوم؟"
+      },
+      "reprompt": {
+        "en": "Please give me a number of bedrooms, for example 2 or 3.",
+        "ar_eg": "قولي رقم أوض النوم، مثلاً ٢ أو ٣."
+      },
+      "extraction_hints": {
+        "en": ["bedroom", "bedrooms", "BR", "master"],
+        "ar_eg": ["أوضة نوم", "اوضتين", "غرفة نوم", "غرف نوم", "اوض نوم"]
+      }
+    },
+    {
+      "id": "num_bathrooms",
+      "group": "rooms",
+      "required": true,
+      "type": "integer",
+      "min": 1,
+      "max": 6,
+      "default": null,
+      "ask_when": [],
+      "question": {
+        "en": "How many bathrooms do you want?",
+        "ar_eg": "عايز كام حمام؟"
+      },
+      "reprompt": {
+        "en": "How many bathrooms, for example 1 or 2?",
+        "ar_eg": "كام حمام؟ مثلاً ١ أو ٢."
+      },
+      "extraction_hints": {
+        "en": ["bathroom", "bath", "toilet", "WC"],
+        "ar_eg": ["حمام", "حمامين", "دورة مياه", "تواليت"]
+      }
+    },
+    {
+      "id": "master_has_ensuite",
+      "group": "rooms",
+      "required": false,
+      "type": "boolean",
+      "default": false,
+      "ask_when": [
+        { "slot": "num_bedrooms", "op": "gte", "value": 2 },
+        { "slot": "num_bathrooms", "op": "gte", "value": 2 }
+      ],
+      "question": {
+        "en": "Should the master bedroom have its own bathroom inside it?",
+        "ar_eg": "أوضة النوم الرئيسية يكون فيها حمام خاص؟"
+      }
+    },
+    {
+      "id": "kitchen_type",
+      "group": "kitchen_living",
+      "required": true,
+      "type": "enum",
+      "options": ["open", "closed"],
+      "default": "closed",
+      "ask_when": [],
+      "question": {
+        "en": "Do you want an open kitchen (connected to the living room) or a closed one with a door?",
+        "ar_eg": "عايز المطبخ أمريكاني مفتوح على الريسبشن ولا مقفول بباب؟"
+      },
+      "extraction_hints": {
+        "en": ["open kitchen", "closed kitchen", "american kitchen"],
+        "ar_eg": ["مطبخ أمريكاني", "مطبخ مفتوح", "مطبخ مقفول"]
+      }
+    },
+    {
+      "id": "has_living_room",
+      "group": "kitchen_living",
+      "required": true,
+      "type": "boolean",
+      "default": true,
+      "ask_when": [
+        { "slot": "property_type", "op": "ne", "value": "studio" }
+      ],
+      "question": {
+        "en": "Do you want a separate living room (reception)?",
+        "ar_eg": "عايز ريسبشن منفصل؟"
+      }
+    },
+    {
+      "id": "extra_rooms",
+      "group": "extras",
+      "required": false,
+      "type": "multi_enum",
+      "options": ["balcony", "dining", "storage", "laundry"],
+      "default": [],
+      "ask_when": [],
+      "question": {
+        "en": "Do you want any extra spaces: a balcony, a dining room, storage, or a laundry area?",
+        "ar_eg": "عايز مساحات زيادة: بلكونة، أوضة سفرة، مخزن، ولا غسيل؟"
+      },
+      "extraction_hints": {
+        "en": ["balcony", "terrace", "dining", "storage", "laundry"],
+        "ar_eg": ["بلكونة", "تراس", "سفرة", "مخزن", "غسيل"]
+      }
+    },
+    {
+      "id": "num_balconies",
+      "group": "extras",
+      "required": false,
+      "type": "integer",
+      "min": 1,
+      "max": 4,
+      "default": 1,
+      "ask_when": [
+        { "slot": "extra_rooms", "op": "contains", "value": "balcony" }
+      ],
+      "question": {
+        "en": "How many balconies, and which room should each one open from?",
+        "ar_eg": "كام بلكونة، وكل واحدة تفتح على أنهي أوضة؟"
+      }
+    },
+    {
+      "id": "entrance_room",
+      "group": "connections",
+      "required": true,
+      "type": "enum",
+      "options_from": "rooms_list",
+      "default": "living",
+      "ask_when": [
+        { "slot": "rooms_known", "op": "eq", "value": true }
+      ],
+      "question": {
+        "en": "When you enter through the front door, which room should you arrive in?",
+        "ar_eg": "لما تدخل من باب الشقة، تدخل على أنهي أوضة؟"
+      }
+    },
+    {
+      "id": "connections_mode",
+      "group": "connections",
+      "required": true,
+      "type": "enum",
+      "options": ["auto", "manual"],
+      "default": "auto",
+      "ask_when": [
+        { "slot": "rooms_known", "op": "eq", "value": true }
+      ],
+      "question": {
+        "en": "Do you want me to arrange which rooms connect to each other automatically, or do you want to specify it yourself?",
+        "ar_eg": "عايزني أرتب الأوض المتوصلة ببعض بشكل تلقائي، ولا عايز تحدد إنت؟"
+      }
+    },
+    {
+      "id": "room_connections",
+      "group": "connections",
+      "required": true,
+      "type": "edge_list",
+      "edge_schema": {
+        "from": "room_id",
+        "to": "room_id",
+        "via": ["door", "open_passage", "none"]
+      },
+      "default": "apply_default_connection_rules",
+      "ask_when": [
+        { "slot": "connections_mode", "op": "eq", "value": "manual" }
+      ],
+      "question": {
+        "en": "Your rooms are: {rooms_list}. Tell me which rooms connect to each other, and whether each link is a door or an open passage.",
+        "ar_eg": "الأوض عندك: {rooms_list}. قولي مين متوصل بمين، وهل الوصلة باب ولا مفتوحة؟"
+      },
+      "followups": [
+        {
+          "id": "bedroom_access",
+          "ask_when": [{ "slot": "num_bedrooms", "op": "gte", "value": 2 }],
+          "question": {
+            "en": "Should the bedrooms open onto a hallway, or directly into the living room?",
+            "ar_eg": "أوض النوم تفتح على طرقة، ولا على الريسبشن مباشرة؟"
+          },
+          "options": ["hallway", "living"]
+        },
+        {
+          "id": "bathroom_access",
+          "ask_when": [{ "slot": "num_bathrooms", "op": "gte", "value": 1 }],
+          "question": {
+            "en": "Which room should the main bathroom be reached from?",
+            "ar_eg": "الحمام الرئيسي يتدخله من أنهي مكان؟"
+          },
+          "options_from": "rooms_list"
+        }
+      ],
+      "reprompt": {
+        "en": "I could not match that to the rooms. Please name two rooms and say if they connect by a door or an open passage, for example: kitchen and living room, open.",
+        "ar_eg": "مفهمتش الوصلة دي. قولي اسم أوضتين وهل بينهم باب ولا مفتوح، مثلاً: المطبخ والريسبشن، مفتوح."
+      }
+    },
+    {
+      "id": "family_size",
+      "group": "extras",
+      "required": false,
+      "type": "integer",
+      "min": 1,
+      "max": 15,
+      "default": null,
+      "ask_when": [
+        { "slot": "num_bedrooms", "op": "missing" }
+      ],
+      "question": {
+        "en": "How many people will live in the apartment? I can suggest the number of bedrooms from that.",
+        "ar_eg": "كام فرد هيسكنوا في الشقة؟ أقدر أقترح عدد الأوض على حسبهم."
+      }
+    },
+    {
+      "id": "budget_egp",
+      "group": "extras",
+      "required": false,
+      "type": "number",
+      "unit": "EGP",
+      "default": null,
+      "ask_when": [],
+      "question": {
+        "en": "Do you have a budget in mind?",
+        "ar_eg": "عندك ميزانية معينة في دماغك؟"
+      }
+    }
+  ],
+
+  "default_connection_rules": [
+    { "from": "front_door", "to": "entrance_room", "via": "door" },
+    { "from": "living", "to": "kitchen", "via_by_kitchen_type": { "open": "open_passage", "closed": "door" } },
+    { "from": "living", "to": "dining", "via": "open_passage", "only_if_room_exists": true },
+    { "from": "living", "to": "hallway", "via": "open_passage", "only_if_room_exists": true },
+    { "from": "bedroom", "to": "hallway_or_living", "via": "door", "applies_to": "each_bedroom" },
+    { "from": "bathroom", "to": "hallway_or_living", "via": "door", "applies_to": "each_bathroom" },
+    { "from": "master_bedroom", "to": "ensuite_bathroom", "via": "door", "only_if": "master_has_ensuite" },
+    { "from": "balcony", "to": "living_or_bedroom", "via": "door", "applies_to": "each_balcony" }
+  ],
+
+  "validation_rules": [
+    { "id": "need_a_bathroom", "check": "num_bathrooms >= 1", "message": { "en": "An apartment needs at least one bathroom.", "ar_eg": "لازم في الشقة حمام واحد على الأقل." } },
+    { "id": "bathrooms_not_exceed_rooms", "check": "num_bathrooms <= num_bedrooms + 2", "message": { "en": "That is a lot of bathrooms for this number of bedrooms. Are you sure?", "ar_eg": "عدد الحمامات كبير بالنسبة لأوض النوم. متأكد؟" } },
+    { "id": "area_per_bedroom", "check": "total_area_m2 is null or total_area_m2 / (num_bedrooms + 2) >= 14", "message": { "en": "That area may be too small for this many rooms. Do you want to lower the number of rooms or increase the area?", "ar_eg": "المساحة دي ممكن تبقى صغيرة على الأوض دي كلها. عايز تقلل الأوض ولا تزود المساحة؟" } },
+    { "id": "no_isolated_room", "check": "every room has at least one connection", "message": { "en": "{room} is not connected to anything. Which room should it open to?", "ar_eg": "{room} مش متوصلة بأي مكان. تفتح على أنهي أوضة؟" } },
+    { "id": "all_rooms_reachable", "check": "graph is connected from front_door", "message": { "en": "Some rooms cannot be reached from the entrance. Let us fix the connections.", "ar_eg": "في أوض مفيش طريق ليها من باب الشقة. تعالى نظبط الوصلات." } }
   ]
 }

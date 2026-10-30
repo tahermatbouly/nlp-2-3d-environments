@@ -1,346 +1,246 @@
 from langgraph.graph import StateGraph, START, END
 
-from Backend.agent.state import AgentState
-from Backend.agent.interview_manager import InterviewManager, NONE_VALUE
-from Backend.agent.extraction import (
-    build_summary_segments,
-    classify_summary_reply,
+from backend.agent.state import AgentState
+from backend.agent.conversation_manager import ConversationManager
+from backend.agent.extraction import (
+    classify_confirmation_reply,
     is_obviously_invalid,
     parse_inline_correction_value,
     process_turn,
 )
 
-import re
 
+QUESTIONS_PATH = "Backend/agent/requirements_questions.json"
 
-QUESTIONS_PATH = "Backend/agent/questions.json"
-
-interview_manager = InterviewManager(QUESTIONS_PATH)
+manager = ConversationManager(QUESTIONS_PATH)
 
 
 # ============================================================
-# Segment resolution
+# Small helpers
 # ============================================================
-# Turns a question's raw segment list (which may contain "value"
-# segments referencing a field) into what handler.py actually
-# speaks — plain {"kind": "static"/"value"/"live", ...} dicts with
-# every value already substituted from the candidate dict. Keeping
-# this resolution in the graph means handler.py never touches
-# state["candidate"] directly.
 
-def _format(value) -> str:
+def _plain_text(segments: list[dict]) -> str:
+    """What was actually said, used as CURRENT QUESTION context."""
 
-    if isinstance(value, list):
-        return "، ".join(str(item) for item in value)
-
-    return str(value)
+    return " ".join(seg["text"] for seg in segments)
 
 
-def _first_name(value) -> str:
-    """
-    Spoken form for recalling a person: first token only, so
-    "طاهر محمد علي" becomes "طاهر".
-    """
+def _base(state: AgentState, requirements: dict, resolved: list, assumed: list, **changes) -> AgentState:
+    """State after a successful turn: counters and flags reset."""
 
-    text = _format(value).strip()
-
-    if not text:
-        return text
-
-    return text.split()[0]
-
-
-def _spoken_field_value(field: str, value) -> str:
-    """How a field's value should sound when spoken back."""
-
-    if field == "candidate_name":
-        return _first_name(value)
-
-    return _format(value)
+    return {
+        **state,
+        "requirements": requirements,
+        "resolved": resolved,
+        "assumed": assumed,
+        "retry_count": 0,
+        "extraction_success": True,
+        "failure_reason": None,
+        "transcript": "",
+        "intent_prompt": [],
+        **changes,
+    }
 
 
-def _resolve_live_template(
-    template: str,
-    candidate: dict,
-) -> str | None:
-    """
-    Substitute {field} placeholders. Returns None if any required
-    field is missing so the segment is skipped rather than spoken
-    with a hole.
-    """
+def _summary_segments(state: AgentState) -> list[dict]:
 
-    fields = re.findall(r"\{(\w+)\}", template)
-    text = template
-
-    for field in fields:
-
-        value = candidate.get(field)
-
-        if value is None or value == NONE_VALUE:
-            return None
-
-        text = text.replace(
-            "{" + field + "}",
-            _spoken_field_value(field, value),
-        )
-
-    return text
-
-
-def _resolve_segments(
-    segments: list[dict],
-    candidate: dict,
-) -> list[dict]:
-
-    resolved = []
-
-    for seg in segments:
-
-        if seg["type"] == "static":
-
-            resolved.append(
-                {"kind": "static", "id": seg["id"], "text": seg["text"]}
-            )
-
-        elif seg["type"] == "live":
-
-            # Whole phrase synthesized fresh each time (no TTS cache).
-            text = _resolve_live_template(seg["template"], candidate)
-
-            if text is None:
-                continue
-
-            resolved.append({"kind": "live", "text": text})
-
-        elif seg["type"] == "value":
-
-            value = candidate.get(seg["field"])
-
-            if value is None or value == NONE_VALUE:
-                continue
-
-            resolved.append(
-                {
-                    "kind": "value",
-                    "text": _spoken_field_value(seg["field"], value),
-                }
-            )
-
-        elif seg["type"] == "value_text":
-
-            # Already-formatted text (used by build_summary_segments,
-            # which resolves the value itself before this point).
-            resolved.append({"kind": "value", "text": seg["text"]})
-
-    return resolved
-
-
-def _plain_text(segments: list[dict], candidate: dict) -> str:
-    """
-    The full sentence actually spoken for these segments, used as
-    the CURRENT QUESTION context in the extraction prompt. Built by
-    resolving and joining every segment (not just assuming the last
-    one is static) so this stays correct regardless of where a
-    "value" segment falls in the sentence.
-    """
-
-    resolved = _resolve_segments(segments, candidate)
-
-    return " ".join(seg["text"] for seg in resolved)
-
-
-def _question_prompt(
-    question: dict,
-    candidate: dict,
-    repeat: bool = False,
-) -> list[dict]:
-
-    segments = (
-        question.get("repeat_segments") or question["segments"]
-        if repeat
-        else question["segments"]
+    summary = manager.summary_text(
+        state["requirements"], state["assumed"], state["language"]
     )
 
-    return _resolve_segments(segments, candidate)
+    return manager.confirmation_segments(summary, state["language"])
+
+
+def _repeat_prompt(state: AgentState) -> list[dict]:
+    """The right thing to say again for the current mode."""
+
+    lang = state["language"]
+    mode = state["mode"]
+
+    if mode == "validating":
+        return manager.validation_segments(
+            state["pending_validation"], state["requirements"], lang
+        )
+
+    if mode == "summary":
+        return _summary_segments(state)
+
+    if state["current_slots"]:
+        return manager.question_segments(
+            state["current_slots"], state["requirements"], lang, repeat=True
+        )
+
+    return manager.message_segments("greeting", lang)
+
+
+def _merge_edges(existing: list[dict], new: list[dict]) -> list[dict]:
+    """New edges override older ones between the same two rooms."""
+
+    merged = {frozenset((e["from"], e["to"])): e for e in existing}
+
+    for edge in new:
+        merged[frozenset((edge["from"], edge["to"]))] = edge
+
+    return list(merged.values())
+
+
+def _apply_result(requirements: dict, resolved: list, assumed: list, result: dict) -> set[str]:
+    """Write an extraction result into the requirements. Returns the
+    slot ids that were actually settled by it."""
+
+    touched: set[str] = set()
+
+    for sid, value in result.get("updates", {}).items():
+
+        slot = manager.get_slot(sid)
+
+        if slot is not None and slot["type"] == "edge_list":
+            value = _merge_edges(requirements.get(sid) or [], value)
+
+        requirements[sid] = value
+
+        if sid not in resolved:
+            resolved.append(sid)
+
+        if sid in assumed:
+            assumed.remove(sid)
+
+        touched.add(sid)
+
+    for sid in result.get("use_default_for", []):
+
+        if manager.settle_with_default(sid, requirements, resolved, assumed):
+            touched.add(sid)
+
+        elif not manager.get_slot(sid).get("required"):
+            # "I don't care" about an optional slot with no default:
+            # settled with no value, never asked again.
+            if sid not in resolved:
+                resolved.append(sid)
+
+            touched.add(sid)
+
+    manager.reconcile(requirements, resolved, assumed)
+
+    return touched
 
 
 # ============================================================
 # Start
 # ============================================================
 
-async def start_interview(state: AgentState) -> AgentState:
+async def start_conversation(state: AgentState) -> AgentState:
+    """Play the greeting and wait for the user's open description."""
 
-    print("[GRAPH] Starting interview")
+    print("[GRAPH] Starting conversation")
 
-    first_question = interview_manager.get_question(0)
+    lang = state.get("language") or manager.default_language
 
     return {
         **state,
-        "candidate": {},
-        "current_question_index": 0,
-        "current_question": first_question,
-        "mode": "interview",
-        "current_prompt": _question_prompt(first_question, {}),
+        "language": lang,
+        "requirements": {},
+        "resolved": [],
+        "assumed": [],
+        "acknowledged_rules": [],
+        "mode": "gathering",
+        "current_slots": [],
+        "current_prompt": manager.message_segments("greeting", lang),
         "intent_prompt": [],
         "retry_count": 0,
         "extraction_success": True,
         "failure_reason": None,
-        "interview_finished": False,
+        "pending_validation": None,
+        "room_graph": None,
+        "conversation_finished": False,
         "ended_early": False,
         "transcript": "",
     }
 
 
 # ============================================================
-# Advance / summary helpers
+# Choosing what happens next
 # ============================================================
 
-def _field_is_filled(candidate: dict, field_name: str) -> bool:
-    """True once we have a stored value, including explicit NONE."""
-
-    return (
-        field_name in candidate
-        and candidate[field_name] is not None
-    )
-
-
-def _question_is_satisfied(
-    question: dict,
-    candidate: dict,
-) -> bool:
+def _next_step(
+    state: AgentState,
+    requirements: dict,
+    resolved: list,
+    assumed: list,
+    intent_prompt: list | None = None,
+) -> AgentState:
     """
-    A question is done when every field it asks for is already
-    filled — used to skip ahead when the candidate volunteered
-    answers earlier.
+    1. Missing slots left        -> ask them (max N per turn)
+    2. Fill silent defaults, then run validation rules
+       - rule failed             -> ask about it
+    3. Everything fine           -> spoken summary
     """
 
-    targets = interview_manager.target_fields(question)
+    lang = state["language"]
+    base = _base(state, requirements, resolved, assumed)
 
-    if not targets:
-        return False
+    ids = manager.next_slots(requirements, resolved)
 
-    return all(
-        _field_is_filled(candidate, name) for name in targets
-    )
+    if ids:
 
+        print("[GRAPH] Asking:", ids)
 
-def _extractable_fields(
-    question: dict,
-    candidate: dict,
-    *,
-    correcting: bool,
-) -> tuple[list[dict], list[dict]]:
-    """
-    Returns (current_fields, all_fields_for_tool).
+        result = {
+            **base,
+            "mode": "gathering",
+            "current_slots": ids,
+            "pending_validation": None,
+            "current_prompt": manager.question_segments(ids, requirements, lang),
+        }
 
-    In correcting mode only the fields for that question are
-    exposed. In interview mode the tool also sees every still-empty
-    interview field so volunteered future answers can be stored.
-    """
+    else:
 
-    target_names = interview_manager.target_fields(question)
+        manager.fill_defaults(requirements, resolved, assumed)
 
-    current_fields = [
-        f
-        for name in target_names
-        if (f := interview_manager.get_field(name)) is not None
-    ]
+        issue = manager.validate(requirements, state["acknowledged_rules"])
 
-    if correcting:
-        return current_fields, current_fields
+        if issue and issue["kind"] == "reask":
 
-    seen = {f["name"] for f in current_fields}
-    extra = []
+            requirements.pop(issue["slot"], None)
 
-    for field in interview_manager.fields:
+            if issue["slot"] in resolved:
+                resolved.remove(issue["slot"])
 
-        name = field["name"]
+            return _next_step(state, requirements, resolved, assumed, intent_prompt)
 
-        if name in seen:
-            continue
+        if issue:
 
-        if _field_is_filled(candidate, name):
-            continue
+            print("[GRAPH] Validation issue:", issue)
 
-        # Only pull in fields that belong to the interview sequence
-        # (or the free-form notes catch-all).
-        if field.get("asked_by") or name == "notes":
-            extra.append(field)
-            seen.add(name)
+            result = {
+                **base,
+                "mode": "validating",
+                "current_slots": [],
+                "pending_validation": issue,
+                "current_prompt": manager.validation_segments(issue, requirements, lang),
+            }
 
-    return current_fields, current_fields + extra
+        else:
 
+            print("[GRAPH] Everything collected -> summary")
 
-def _advance_or_summarize(state: AgentState) -> AgentState:
+            result = _build_summary(base)
 
-    candidate = state["candidate"]
+    if intent_prompt:
+        result["intent_prompt"] = intent_prompt
 
-    next_index = state["current_question_index"] + 1
-
-    while True:
-
-        next_question = interview_manager.get_question(next_index)
-
-        if next_question is None:
-
-            print("[GRAPH] Out of questions -> summary")
-
-            return _build_summary(state)
-
-        if _question_is_satisfied(next_question, candidate):
-
-            print(
-                "[GRAPH] Skipping already-filled question:",
-                next_question["id"],
-            )
-
-            next_index += 1
-            continue
-
-        break
-
-    print("[GRAPH] Advancing to:", next_question["id"])
-
-    return {
-        **state,
-        "current_question_index": next_index,
-        "current_question": next_question,
-        "mode": "interview",
-        "current_prompt": _question_prompt(next_question, candidate),
-        "intent_prompt": [],
-        "retry_count": 0,
-        "extraction_success": True,
-        "failure_reason": None,
-        "transcript": "",
-    }
+    return result
 
 
 def _build_summary(state: AgentState) -> AgentState:
 
-    segments = build_summary_segments(
-        state["candidate"], interview_manager
-    )
-
-    candidate = state["candidate"]
-
-    # Speak the short "one moment" filler first so the candidate
-    # hears something while summary value clips are still synthesizing.
-    # Only on entry into summary (not when rebuilding after an
-    # inline correction) — they already heard it once.
-    if state.get("mode") == "summary":
-        intent_prompt: list[dict] = []
-    else:
-        processing = interview_manager.summary_config.get(
-            "processing", []
-        )
-        intent_prompt = _resolve_segments(processing, candidate)
-
     return {
         **state,
-        "current_question": None,
         "mode": "summary",
-        "current_prompt": _resolve_segments(segments, candidate),
-        "intent_prompt": intent_prompt,
+        "current_slots": [],
+        "pending_validation": None,
+        "current_prompt": _summary_segments(state),
+        "intent_prompt": [],
         "retry_count": 0,
         "extraction_success": True,
         "failure_reason": None,
@@ -348,133 +248,159 @@ def _build_summary(state: AgentState) -> AgentState:
     }
 
 
-def _retry_or_skip(state: AgentState, failure_reason: str) -> AgentState:
-    """
-    Repeats the current question, unless it has already failed
-    max_retries_per_question times in a row — then it moves on
-    rather than looping forever. Required fields still get skipped
-    past this limit (better an incomplete interview than a stuck
-    call); skip_optional_after_max_retries only changes whether an
-    optional field's absence is worth distinguishing in logs, since
-    either way we must advance.
-    """
+def _cannot_continue(state: AgentState) -> AgentState:
 
-    question = state["current_question"]
-    candidate = state["candidate"]
-
-    retry_count = state["retry_count"] + 1
-
-    if retry_count >= interview_manager.max_retries_per_question:
-
-        print(
-            "[GRAPH] Max retries reached for",
-            question["id"] if question else None,
-            "- skipping",
-        )
-
-        return _advance_or_summarize({**state, "retry_count": 0})
+    print("[GRAPH] Cannot continue: required slot never answered")
 
     return {
         **state,
-        "current_prompt": _question_prompt(
-            question, candidate, repeat=True
-        ),
+        "mode": "finished",
+        "current_slots": [],
+        "current_prompt": manager.message_segments("cannot_continue", state["language"]),
         "intent_prompt": [],
-        "retry_count": retry_count,
+        "conversation_finished": True,
+        "ended_early": True,
         "extraction_success": False,
-        "failure_reason": failure_reason,
         "transcript": "",
     }
 
 
+def _retry(state: AgentState, reason: str) -> AgentState:
+    """Say it again, or give up on this prompt after max_reprompts."""
+
+    retry_count = state["retry_count"] + 1
+
+    if retry_count > manager.max_reprompts:
+        return _give_up(state)
+
+    return {
+        **state,
+        "current_prompt": _repeat_prompt(state),
+        "intent_prompt": [],
+        "retry_count": retry_count,
+        "extraction_success": False,
+        "failure_reason": reason,
+        "transcript": "",
+    }
+
+
+def _give_up(state: AgentState) -> AgentState:
+    """
+    Too many failed attempts on one prompt:
+      - correcting   -> keep the old value, back to the summary
+      - validating   -> fix it automatically / accept the warning
+      - gathering    -> use the default; optional slots are skipped;
+                        a required slot with no default ends the call
+                        (an open first turn just starts the questions)
+    """
+
+    requirements = dict(state["requirements"])
+    resolved = list(state["resolved"])
+    assumed = list(state["assumed"])
+
+    mode = state["mode"]
+
+    if mode == "correcting":
+        return _build_summary(_base(state, requirements, resolved, assumed))
+
+    if mode == "validating":
+
+        pending = state["pending_validation"]
+        acknowledged = list(state["acknowledged_rules"])
+
+        if pending["kind"] == "connect":
+            manager.auto_connect(requirements, pending["room"])
+        else:
+            acknowledged.append(pending["rule"])
+
+        return _next_step(
+            {**state, "acknowledged_rules": acknowledged},
+            requirements,
+            resolved,
+            assumed,
+        )
+
+    for sid in state["current_slots"]:
+
+        if sid in resolved:
+            continue
+
+        if manager.settle_with_default(sid, requirements, resolved, assumed):
+            continue
+
+        if manager.get_slot(sid).get("required"):
+            return _cannot_continue(state)
+
+        resolved.append(sid)
+
+    return _next_step(state, requirements, resolved, assumed)
+
+
 # ============================================================
-# Process an answer to a normal (or correcting) question
+# Gathering (and correcting one slot)
 # ============================================================
 
 async def process_answer(state: AgentState) -> AgentState:
 
-    question = state["current_question"]
     transcript = state["transcript"].strip()
-    candidate = dict(state["candidate"])
-
-    # ----------------------------------------------------
-    # Obvious silence/filler — skip the LLM call entirely.
-    # ----------------------------------------------------
+    lang = state["language"]
 
     if is_obviously_invalid(transcript):
 
         print("[GRAPH] Obviously invalid transcript")
 
-        return _retry_or_skip(state, "no_speech")
+        return _retry(state, "no_speech")
 
-    target_field_names = interview_manager.target_fields(question)
+    requirements = dict(state["requirements"])
+    resolved = list(state["resolved"])
+    assumed = list(state["assumed"])
 
-    current_fields, extractable_fields = _extractable_fields(
-        question,
-        candidate,
-        correcting=state["mode"] == "correcting",
+    current_ids = state["current_slots"]
+    correcting = state["mode"] == "correcting"
+
+    current_slots = [manager.get_slot(i) for i in current_ids]
+
+    slots = (
+        current_slots
+        if correcting
+        else manager.extractable_slots(requirements, resolved, current_ids)
     )
 
     result = await process_turn(
-        question_text=_plain_text(question["segments"], candidate),
-        fields=extractable_fields,
-        current_fields=current_fields,
-        intents=interview_manager.intents,
+        question_text=_plain_text(state["current_prompt"]),
+        slots=slots,
+        current_slots=current_slots,
+        intents=manager.intents,
         transcript=transcript,
+        rooms_context=manager.rooms_context(requirements, resolved, lang),
+        room_ids=manager.room_ids(requirements, resolved),
     )
 
     print("[GRAPH] Turn result:", result)
 
-    # ----------------------------------------------------
-    # Intent matched — not an answer at all.
-    # ----------------------------------------------------
-
     if result["kind"] == "intent":
-
         return await _handle_intent(state, result["intent_id"])
 
-    # ----------------------------------------------------
-    # No usable answer, no intent match.
-    # ----------------------------------------------------
+    if result["kind"] != "answer":
+        return _retry(state, "wrong_answer")
 
-    if result["kind"] != "answer" or not result["updates"]:
+    touched = _apply_result(requirements, resolved, assumed, result)
 
-        return _retry_or_skip(state, "wrong_answer")
+    # Volunteered extras are kept, but the question that was asked
+    # must be answered before we move on.
+    if current_ids and not touched & set(current_ids):
 
-    # ----------------------------------------------------
-    # Real answer — may include future fields volunteered early.
-    # ----------------------------------------------------
+        print("[GRAPH] Current question not answered:", current_ids, "| got:", sorted(touched))
 
-    candidate.update(result["updates"])
-
-    # The current question still must be addressed. Extra fields
-    # alone are not enough to move on.
-    if not any(
-        _field_is_filled(candidate, name)
-        for name in target_field_names
-    ):
-
-        print(
-            "[GRAPH] Updates missed current question fields:",
-            target_field_names,
-            "| got:",
-            list(result["updates"]),
-        )
-
-        return _retry_or_skip(
-            {**state, "candidate": candidate},
+        return _retry(
+            {**state, "requirements": requirements, "resolved": resolved, "assumed": assumed},
             "wrong_answer",
         )
 
-    new_state = {**state, "candidate": candidate}
+    if correcting:
+        state = {**state, "acknowledged_rules": []}
 
-    if state["mode"] == "correcting":
-
-        print("[GRAPH] Correction applied, rebuilding summary")
-
-        return _build_summary(new_state)
-
-    return _advance_or_summarize(new_state)
+    return _next_step(state, requirements, resolved, assumed)
 
 
 # ============================================================
@@ -483,231 +409,263 @@ async def process_answer(state: AgentState) -> AgentState:
 
 async def _handle_intent(state: AgentState, intent_id: str) -> AgentState:
 
-    intent = interview_manager.get_intent(intent_id)
+    intent = manager.get_intent(intent_id)
 
     if intent is None:
-        # Unknown id somehow — fall back to a normal retry rather
-        # than crash.
-        return _retry_or_skip(state, "wrong_answer")
+        return _retry(state, "wrong_answer")
 
-    intent_prompt = [
-        {"kind": "static", "id": intent["id"], "text": intent["text"]}
-    ]
-
+    line = manager.intent_segments(intent, state["language"])
     action = intent.get("then", "repeat_question")
-
-    question = state["current_question"]
-    candidate = state["candidate"]
 
     print("[GRAPH] Intent:", intent_id, "| then:", action)
 
-    # --------------------------------------------------------
-    # wait: say the line, keep the exact same question active,
-    # don't touch retry_count (asking for a moment isn't a failed
-    # answer) and don't repeat the question — silence afterward is
-    # just them thinking.
-    # --------------------------------------------------------
+    quiet = {
+        "extraction_success": False,
+        "failure_reason": None,
+        "transcript": "",
+    }
 
+    # Say the line, keep the same prompt active, no repeat.
     if action == "wait":
+        return {**state, "current_prompt": [], "intent_prompt": line, **quiet}
 
-        return {
-            **state,
-            "current_prompt": [],
-            "intent_prompt": intent_prompt,
-            "extraction_success": False,
-            "failure_reason": None,
-            "transcript": "",
-        }
-
-    # --------------------------------------------------------
-    # repeat_question: say the line, then repeat the question —
-    # doesn't count against the retry limit, this isn't a failed
-    # extraction attempt.
-    # --------------------------------------------------------
-
+    # Say the line, then repeat. Not a failed attempt, so
+    # retry_count is untouched.
     if action == "repeat_question":
-
         return {
             **state,
-            "current_prompt": _question_prompt(
-                question, candidate, repeat=True
-            ),
-            "intent_prompt": intent_prompt,
-            "extraction_success": False,
-            "failure_reason": None,
-            "transcript": "",
+            "current_prompt": _repeat_prompt(state),
+            "intent_prompt": line,
+            **quiet,
         }
 
-    # --------------------------------------------------------
-    # skip_question: say the line, move on without filling this
-    # question's fields.
-    # --------------------------------------------------------
-
-    if action == "skip_question":
-
-        advanced = _advance_or_summarize({**state, "retry_count": 0})
-
-        # If skip lands on summary, keep the processing filler so
-        # value-clip TTS still overlaps speech (skip line alone is
-        # usually too short to cover synthesis).
-        if advanced.get("mode") == "summary":
-            summary_filler = advanced.get("intent_prompt") or []
-        else:
-            summary_filler = []
-
-        return {
-            **advanced,
-            "intent_prompt": intent_prompt + summary_filler,
-        }
-
-    # --------------------------------------------------------
-    # end_call: say the line (it's already a full goodbye), stop
-    # here. handler.py sees ended_early and saves without playing
-    # the normal completion clip.
-    # --------------------------------------------------------
-
+    # The line is already a goodbye. Stop here.
     if action == "end_call":
-
         return {
             **state,
-            "current_prompt": [],
-            "intent_prompt": intent_prompt,
             "mode": "finished",
+            "current_slots": [],
+            "current_prompt": [],
+            "intent_prompt": line,
+            "conversation_finished": True,
+            "ended_early": True,
             "extraction_success": True,
             "failure_reason": None,
-            "interview_finished": True,
-            "ended_early": True,
             "transcript": "",
         }
 
-    return _retry_or_skip(state, "wrong_answer")
+    return _retry(state, "wrong_answer")
 
 
 # ============================================================
-# Summary
+# Corrections (shared by the summary and soft warnings)
+# ============================================================
+
+def _apply_correction(
+    state: AgentState,
+    requirements: dict,
+    resolved: list,
+    assumed: list,
+    decision: dict,
+) -> AgentState:
+    """
+    The user wants to change one field. If they also said the new
+    value, apply it straight away. Otherwise re-ask that slot.
+    """
+
+    lang = state["language"]
+    field = decision["field"]
+    slot = manager.get_slot(field)
+
+    # Values changed, so earlier "that's fine" answers are stale.
+    state = {**state, "acknowledged_rules": []}
+
+    if slot is None:
+        return _next_step(state, requirements, resolved, assumed)
+
+    new_value = decision.get("new_value")
+
+    if new_value:
+
+        parsed = parse_inline_correction_value(
+            manager, slot, new_value, manager.room_ids(requirements, resolved)
+        )
+
+        if parsed is not None:
+
+            print("[GRAPH] Inline correction:", field, "=", parsed)
+
+            requirements[field] = parsed
+
+            if field not in resolved:
+                resolved.append(field)
+
+            if field in assumed:
+                assumed.remove(field)
+
+            manager.reconcile(requirements, resolved, assumed)
+
+            return _next_step(state, requirements, resolved, assumed)
+
+    # Changing connections only makes sense in manual mode.
+    if field == "room_connections":
+
+        requirements["connections_mode"] = "manual"
+
+        if "connections_mode" not in resolved:
+            resolved.append("connections_mode")
+
+    print("[GRAPH] Correcting:", field)
+
+    return _base(
+        state,
+        requirements,
+        resolved,
+        assumed,
+        mode="correcting",
+        current_slots=[field],
+        pending_validation=None,
+        current_prompt=manager.question_segments([field], requirements, lang),
+    )
+
+
+# ============================================================
+# Validation reply
+# ============================================================
+
+async def process_validation_reply(state: AgentState) -> AgentState:
+
+    transcript = state["transcript"].strip()
+    lang = state["language"]
+
+    if is_obviously_invalid(transcript):
+        return _retry(state, "no_speech")
+
+    pending = state["pending_validation"]
+
+    requirements = dict(state["requirements"])
+    resolved = list(state["resolved"])
+    assumed = list(state["assumed"])
+
+    # --------------------------------------------------------
+    # A room is isolated / unreachable: which room does it open to?
+    # --------------------------------------------------------
+
+    if pending["kind"] == "connect":
+
+        repair = manager.repair_slot()
+
+        result = await process_turn(
+            question_text=_plain_text(state["current_prompt"]),
+            slots=[repair],
+            current_slots=[repair],
+            intents=manager.intents,
+            transcript=transcript,
+            rooms_context=manager.rooms_context(requirements, resolved, lang),
+            room_ids=manager.room_ids(requirements, resolved),
+        )
+
+        print("[GRAPH] Repair result:", result)
+
+        if result["kind"] == "intent":
+            return await _handle_intent(state, result["intent_id"])
+
+        target = result.get("updates", {}).get("repair_target") if result["kind"] == "answer" else None
+
+        if not target or target == pending["room"]:
+            return _retry(state, "wrong_answer")
+
+        requirements["room_connections"] = list(requirements.get("room_connections") or []) + [
+            {"from": pending["room"], "to": target, "via": "door"}
+        ]
+
+        return _next_step(state, requirements, resolved, assumed)
+
+    # --------------------------------------------------------
+    # Soft warning: keep as is, or change something?
+    # --------------------------------------------------------
+
+    decision = await classify_confirmation_reply(
+        transcript,
+        _plain_text(state["current_prompt"]),
+        manager.correctable_slots(),
+    )
+
+    print("[GRAPH] Warning reply:", decision)
+
+    if decision["action"] == "confirm":
+
+        return _next_step(
+            {**state, "acknowledged_rules": state["acknowledged_rules"] + [pending["rule"]]},
+            requirements,
+            resolved,
+            assumed,
+        )
+
+    if decision["action"] == "correct":
+        return _apply_correction(state, requirements, resolved, assumed, decision)
+
+    return _retry(state, "wrong_answer")
+
+
+# ============================================================
+# Summary reply
 # ============================================================
 
 async def process_summary_reply(state: AgentState) -> AgentState:
 
     transcript = state["transcript"].strip()
+    lang = state["language"]
 
-    if is_obviously_invalid(transcript):
-
-        print("[GRAPH] Summary reply obviously invalid, replaying")
-
-        return {
-            **state,
-            "current_prompt": _resolve_segments(
-                build_summary_segments(
-                    state["candidate"], interview_manager
-                ),
-                state["candidate"],
-            ),
-            "intent_prompt": [],
-            "extraction_success": False,
-            "failure_reason": None,
-            "transcript": "",
-        }
-
-    decision = await classify_summary_reply(
-        transcript, interview_manager.fields
-    )
-
-    print("[GRAPH] Summary reply:", decision)
-
-    if decision["action"] == "confirm":
-
-        candidate = state["candidate"]
-
-        return {
-            **state,
-            "mode": "finished",
-            "current_question": None,
-            "current_prompt": _resolve_segments(
-                interview_manager.completion_segments, candidate
-            ),
-            "intent_prompt": [],
-            "extraction_success": True,
-            "failure_reason": None,
-            "interview_finished": True,
-            "ended_early": False,
-            "transcript": "",
-        }
-
-    if decision["action"] == "correct":
-
-        field_name = decision["field"]
-        inline_value = decision.get("new_value")
-
-        # ----------------------------------------------------
-        # Inline correction: they said what to change AND the
-        # new value in one utterance — apply it and rebuild the
-        # summary without re-asking the field question.
-        # ----------------------------------------------------
-
-        if inline_value and field_name:
-
-            field_def = interview_manager.get_field(field_name)
-
-            if field_def is not None:
-
-                parsed = parse_inline_correction_value(
-                    field_def, inline_value
-                )
-
-                if parsed is not None:
-
-                    candidate = dict(state["candidate"])
-                    candidate[field_name] = parsed
-
-                    print(
-                        "[GRAPH] Inline correction applied:",
-                        field_name,
-                        "=",
-                        parsed,
-                    )
-
-                    return _build_summary(
-                        {**state, "candidate": candidate}
-                    )
-
-        target_question = interview_manager.question_for_field(
-            field_name
-        )
-
-        if target_question is not None:
-
-            print("[GRAPH] Correcting:", target_question["id"])
-
-            return {
-                **state,
-                "mode": "correcting",
-                "current_question": target_question,
-                "current_prompt": _question_prompt(
-                    target_question, state["candidate"], repeat=True
-                ),
-                "intent_prompt": [],
-                "retry_count": 0,
-                "extraction_success": True,
-                "failure_reason": None,
-                "transcript": "",
-            }
-
-    print("[GRAPH] Summary reply unclear, replaying summary")
-
-    return {
+    replay = {
         **state,
-        "current_prompt": _resolve_segments(
-            build_summary_segments(
-                state["candidate"], interview_manager
-            ),
-            state["candidate"],
-        ),
+        "current_prompt": _summary_segments(state),
         "intent_prompt": [],
         "extraction_success": False,
         "failure_reason": None,
         "transcript": "",
     }
+
+    if is_obviously_invalid(transcript):
+
+        print("[GRAPH] Summary reply obviously invalid, replaying")
+
+        return replay
+
+    decision = await classify_confirmation_reply(
+        transcript,
+        _plain_text(state["current_prompt"]),
+        manager.correctable_slots(),
+    )
+
+    print("[GRAPH] Summary reply:", decision)
+
+    requirements = dict(state["requirements"])
+    resolved = list(state["resolved"])
+    assumed = list(state["assumed"])
+
+    if decision["action"] == "confirm":
+
+        return {
+            **state,
+            "mode": "finished",
+            "current_slots": [],
+            "current_prompt": manager.message_segments("completion", lang),
+            "intent_prompt": [],
+            "room_graph": manager.build_room_graph(requirements, assumed),
+            "conversation_finished": True,
+            "ended_early": False,
+            "extraction_success": True,
+            "failure_reason": None,
+            "transcript": "",
+        }
+
+    if decision["action"] == "correct":
+        return _apply_correction(state, requirements, resolved, assumed, decision)
+
+    print("[GRAPH] Summary reply unclear, replaying summary")
+
+    return replay
 
 
 # ============================================================
@@ -716,29 +674,19 @@ async def process_summary_reply(state: AgentState) -> AgentState:
 
 def route_from_start(state: AgentState):
     """
-    current_question_index starts at -1 in handler.py's initial
-    state dict and is only ever set to >= 0 by start_interview.
-    That — NOT "is the transcript empty" — is what actually
-    distinguishes "this is the very first call" from "this is a
-    normal turn where STT happened to come back empty".
-
-    An empty transcript mid-interview must NOT re-trigger
-    start_interview: that would silently wipe state["candidate"]
-    and restart the whole call from question 0. process_answer's
-    and process_summary_reply's own is_obviously_invalid() checks
-    already treat "" correctly as a no_speech retry — there's
-    nothing left for this router to special-case.
+    The mode decides everything. "start" is only the state handler
+    code creates with new_state(): the first call plays the greeting,
+    and every later call carries a transcript. An empty transcript
+    mid-conversation is just a no_speech retry, it never restarts.
     """
 
-    if state.get("current_question_index", -1) < 0:
-        return "start"
-
-    mode = state.get("mode", "interview")
-
-    if mode == "summary":
-        return "summary"
-
-    return "answer"
+    return {
+        "start": "start",
+        "gathering": "answer",
+        "correcting": "answer",
+        "validating": "validation",
+        "summary": "summary",
+    }.get(state.get("mode", "start"), "done")
 
 
 # ============================================================
@@ -747,22 +695,26 @@ def route_from_start(state: AgentState):
 
 builder = StateGraph(AgentState)
 
-builder.add_node("start_interview", start_interview)
+builder.add_node("start_conversation", start_conversation)
 builder.add_node("process_answer", process_answer)
+builder.add_node("process_validation_reply", process_validation_reply)
 builder.add_node("process_summary_reply", process_summary_reply)
 
 builder.add_conditional_edges(
     START,
     route_from_start,
     {
-        "start": "start_interview",
+        "start": "start_conversation",
         "answer": "process_answer",
+        "validation": "process_validation_reply",
         "summary": "process_summary_reply",
+        "done": END,
     },
 )
 
-builder.add_edge("start_interview", END)
+builder.add_edge("start_conversation", END)
 builder.add_edge("process_answer", END)
+builder.add_edge("process_validation_reply", END)
 builder.add_edge("process_summary_reply", END)
 
 agent_graph = builder.compile()

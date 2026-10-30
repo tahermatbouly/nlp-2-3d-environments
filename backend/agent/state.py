@@ -3,66 +3,100 @@ from typing import Any, Literal, TypedDict
 
 class AgentState(TypedDict):
     """
-    Every key here must be declared — LangGraph builds its state
+    Every key here must be declared: LangGraph builds its state
     channels from this TypedDict, and any key a node returns that
     isn't listed gets silently dropped on the merge.
     """
 
     transcript: str
 
-    # Keys are field "name"s from questions.json, so this is a
-    # plain dict rather than a fixed TypedDict — the field set is
-    # config-driven. A value can be interview_manager.NONE_VALUE,
-    # meaning "candidate explicitly said they don't have this".
-    candidate: dict[str, Any]
+    # "en" or "ar_eg" - picks which text from the JSON is spoken.
+    language: str
 
-    current_question_index: int
+    # slot id -> value, for every slot from requirements_questions.json.
+    # Types follow the slot type: int, float, bool, str, list[str],
+    # or list[{"from", "to", "via"}] for room_connections.
+    requirements: dict[str, Any]
 
-    # The question object from questions.json currently being
-    # asked. During "correcting" this is temporarily swapped for
-    # whichever question owns the field being corrected — the index
-    # itself is untouched, so the normal sequence resumes at the
-    # summary afterward, not mid-list.
-    current_question: dict | None
+    # Slot ids that are SETTLED: answered by the user, explicitly
+    # declined ("you decide"), or filled from the default. A slot can
+    # be resolved with value None (optional slot the user skipped).
+    resolved: list[str]
 
-    # "interview"   — walking through questions.json in order
-    # "summary"     — candidate is replying to the spoken review
-    # "correcting"  — re-answering one field they asked to change
-    # "finished"    — confirmed, interview over
-    mode: Literal["interview", "summary", "correcting", "finished"]
+    # Subset of `resolved` that was filled from a default rather than
+    # stated by the user. Read back in the summary with a tag, and
+    # saved in the final room graph as "assumed_fields".
+    assumed: list[str]
 
-    # Resolved list of segments to speak next — each item is either
-    # {"kind": "static", "id": ..., "text": ...} or
-    # {"kind": "value", "text": ...} (values already substituted in
-    # by graph.py, so handler.py never touches state["candidate"]
-    # directly). This is what handler.py's speak_segments() plays.
+    # "start"      - nothing said yet, next call plays the greeting
+    # "gathering"  - asking for missing slots (or waiting for the
+    #                user's first, open description)
+    # "validating" - a validation rule failed and we asked about it
+    # "summary"    - user is replying to the spoken summary
+    # "correcting" - re-asking one slot the user wanted to change
+    # "finished"   - confirmed (or ended early), conversation over
+    mode: Literal[
+        "start", "gathering", "validating", "summary", "correcting", "finished"
+    ]
+
+    # Slot ids asked in the last prompt (up to policy
+    # max_questions_per_turn). Empty during the open first turn.
+    current_slots: list[str]
+
+    # Segments to speak next. Each item is
+    # {"kind": "static", "id": ..., "text": ...}  (cacheable by id) or
+    # {"kind": "live", "text": ...}                (synthesized fresh).
     current_prompt: list[dict]
 
-    # Same shape as current_prompt, for an intent's own line
-    # (e.g. "طيب قولي إيه اللي مش سامعه") or the summary
-    # processing filler to be spoken before current_prompt.
-    # Empty list when there's nothing extra to say.
+    # Same shape, for an intent's own line ("Take your time.") to be
+    # spoken before current_prompt. Empty when there is nothing extra.
     intent_prompt: list[dict]
 
-    # How many times the current question has been retried in a
-    # row (no_speech or wrong_answer). Reset to 0 on every accepted
-    # answer or question change. Read by handler.py against
-    # interview_manager.max_retries_per_question.
+    # Consecutive failed attempts on the current prompt.
     retry_count: int
 
     extraction_success: bool
-
-    # Why the last turn produced nothing: "no_speech" or
-    # "wrong_answer". None on success, or when an intent was matched
-    # instead (that's reported separately via intent_prompt).
     failure_reason: Literal["no_speech", "wrong_answer"] | None
 
-    interview_finished: bool
+    # The validation issue being asked about while mode == "validating":
+    # {"rule": id, "kind": "warning" | "connect", "room": id | None}
+    pending_validation: dict | None
 
-    # True when the call is ending because of an intent like
-    # call_later/not_interested, or because the candidate never
-    # responded through the full silence escalation — NOT a normal
-    # confirmed completion. handler.py uses this to skip the
-    # completion clip (the intent's or silence prompt's own line
-    # already said goodbye) but still save whatever was collected.
+    # Soft validation rules the user already confirmed ("yes, that's
+    # fine"), so they are not asked again.
+    acknowledged_rules: list[str]
+
+    # Final output for Phase 2 (rooms + connections + assumptions).
+    # None until the user confirms the summary.
+    room_graph: dict | None
+
+    conversation_finished: bool
+
+    # True when the conversation ended through an intent (end_call) or
+    # because a required slot could not be collected - NOT a normal
+    # confirmed completion.
     ended_early: bool
+
+
+def new_state(language: str = "ar_eg") -> AgentState:
+    """The initial state handler code should pass to the first call."""
+
+    return {
+        "transcript": "",
+        "language": language,
+        "requirements": {},
+        "resolved": [],
+        "assumed": [],
+        "mode": "start",
+        "current_slots": [],
+        "current_prompt": [],
+        "intent_prompt": [],
+        "retry_count": 0,
+        "extraction_success": True,
+        "failure_reason": None,
+        "pending_validation": None,
+        "acknowledged_rules": [],
+        "room_graph": None,
+        "conversation_finished": False,
+        "ended_early": False,
+    }
