@@ -1,70 +1,226 @@
 {
   "schema_version": "1.0",
   "domain": "apartment_floor_plan",
-  "languages": ["en", "ar_eg"],
-
+  "languages": [
+    "en",
+    "ar_eg"
+  ],
   "messages": {
-    "greeting":        { "en": "Hello! Tell me about the apartment you want, and I will ask about anything that is missing.", "ar_eg": "أهلاً! قولي عايز شقة عاملة إزاي، وأنا هسألك عن أي حاجة ناقصة." },
-    "joiner":          { "en": "Also,", "ar_eg": "وكمان،" },
-    "completion":      { "en": "Great, I have everything I need. I am generating your floor plan now.", "ar_eg": "تمام، معايا كل اللي محتاجه. هبدأ أعمل مخطط الشقة دلوقتي." },
-    "cannot_continue": { "en": "Sorry, I could not get the information I need. Let us try again later.", "ar_eg": "معلش، مقدرتش آخد المعلومات اللي محتاجاها. تعالى نحاول تاني بعدين." },
-    "assumed_tag":     { "en": "(assumed)", "ar_eg": "(افتراضي)" },
-    "yes":             { "en": "yes", "ar_eg": "أيوه" },
-    "no":              { "en": "no", "ar_eg": "لأ" },
-    "none":            { "en": "none", "ar_eg": "مفيش" },
+    "greeting": {
+      "en": "Hello! Tell me about the apartment you want, and I will ask about anything that is missing.",
+      "ar_eg": "أهلاً! قولي عايز شقة عاملة إزاي، وأنا هسألك عن أي حاجة ناقصة."
+    },
+    "joiner": {
+      "en": "Also,",
+      "ar_eg": "وكمان،"
+    },
+    "completion": {
+      "en": "Great, I have everything I need. I am generating your floor plan now.",
+      "ar_eg": "تمام، معايا كل اللي محتاجه. هبدأ أعمل مخطط الشقة دلوقتي."
+    },
+    "cannot_continue": {
+      "en": "Sorry, I could not get the information I need. Let us try again later.",
+      "ar_eg": "معلش، مقدرتش آخد المعلومات اللي محتاجاها. تعالى نحاول تاني بعدين."
+    },
+    "assumed_tag": {
+      "en": "(assumed)",
+      "ar_eg": "(افتراضي)"
+    },
+    "yes": {
+      "en": "yes",
+      "ar_eg": "أيوه"
+    },
+    "no": {
+      "en": "no",
+      "ar_eg": "لأ"
+    },
+    "none": {
+      "en": "none",
+      "ar_eg": "مفيش"
+    },
     "units": {
-      "m2":  { "en": "m2", "ar_eg": "متر مربع" },
-      "EGP": { "en": "EGP", "ar_eg": "جنيه" }
+      "m2": {
+        "en": "m2",
+        "ar_eg": "متر مربع"
+      },
+      "EGP": {
+        "en": "EGP",
+        "ar_eg": "جنيه"
+      }
     },
     "summary_labels": {
-      "property_type":      { "en": "Property type", "ar_eg": "نوع العقار" },
-      "total_area_m2":      { "en": "Area", "ar_eg": "المساحة" },
-      "num_bedrooms":       { "en": "Bedrooms", "ar_eg": "أوض النوم" },
-      "num_bathrooms":      { "en": "Bathrooms", "ar_eg": "الحمامات" },
-      "master_has_ensuite": { "en": "Master bedroom with private bathroom", "ar_eg": "أوضة النوم الرئيسية بحمام خاص" },
-      "kitchen_type":       { "en": "Kitchen", "ar_eg": "المطبخ" },
-      "has_living_room":    { "en": "Separate living room", "ar_eg": "ريسبشن منفصل" },
-      "extra_rooms":        { "en": "Extra spaces", "ar_eg": "مساحات زيادة" },
-      "num_balconies":      { "en": "Balconies", "ar_eg": "البلكونات" },
-      "entrance_room":      { "en": "Front door opens to", "ar_eg": "باب الشقة بيفتح على" },
-      "connections_mode":   { "en": "Room connections", "ar_eg": "وصلات الأوض" },
-      "room_connections":   { "en": "Connections you specified", "ar_eg": "الوصلات اللي حددتها" },
-      "bedroom_access":     { "en": "Bedrooms open onto", "ar_eg": "أوض النوم بتفتح على" },
-      "bathroom_access":    { "en": "Main bathroom reached from", "ar_eg": "الحمام الرئيسي بيتدخل من" },
-      "family_size":        { "en": "Family size", "ar_eg": "عدد الأفراد" },
-      "budget_egp":         { "en": "Budget", "ar_eg": "الميزانية" }
+      "property_type": {
+        "en": "Property type",
+        "ar_eg": "نوع العقار"
+      },
+      "total_area_m2": {
+        "en": "Area",
+        "ar_eg": "المساحة"
+      },
+      "num_bedrooms": {
+        "en": "Bedrooms",
+        "ar_eg": "أوض النوم"
+      },
+      "num_bathrooms": {
+        "en": "Bathrooms",
+        "ar_eg": "الحمامات"
+      },
+      "master_has_ensuite": {
+        "en": "Master bedroom with private bathroom",
+        "ar_eg": "أوضة النوم الرئيسية بحمام خاص"
+      },
+      "kitchen_type": {
+        "en": "Kitchen",
+        "ar_eg": "المطبخ"
+      },
+      "has_living_room": {
+        "en": "Separate living room",
+        "ar_eg": "ريسبشن منفصل"
+      },
+      "extra_rooms": {
+        "en": "Extra spaces",
+        "ar_eg": "مساحات زيادة"
+      },
+      "num_balconies": {
+        "en": "Balconies",
+        "ar_eg": "البلكونات"
+      },
+      "entrance_room": {
+        "en": "Front door opens to",
+        "ar_eg": "باب الشقة بيفتح على"
+      },
+      "connections_mode": {
+        "en": "Room connections",
+        "ar_eg": "وصلات الأوض"
+      },
+      "room_connections": {
+        "en": "Connections you specified",
+        "ar_eg": "الوصلات اللي حددتها"
+      },
+      "bedroom_access": {
+        "en": "Bedrooms open onto",
+        "ar_eg": "أوض النوم بتفتح على"
+      },
+      "bathroom_access": {
+        "en": "Main bathroom reached from",
+        "ar_eg": "الحمام الرئيسي بيتدخل من"
+      },
+      "family_size": {
+        "en": "Family size",
+        "ar_eg": "عدد الأفراد"
+      },
+      "budget_egp": {
+        "en": "Budget",
+        "ar_eg": "الميزانية"
+      }
     },
     "option_names": {
-      "apartment": { "en": "apartment", "ar_eg": "شقة" },
-      "duplex":    { "en": "duplex", "ar_eg": "دوبلكس" },
-      "studio":    { "en": "studio", "ar_eg": "ستوديو" },
-      "open":      { "en": "open kitchen", "ar_eg": "أمريكاني مفتوح" },
-      "closed":    { "en": "closed kitchen", "ar_eg": "مقفول بباب" },
-      "auto":      { "en": "arranged automatically", "ar_eg": "هرتبها أوتوماتيك" },
-      "manual":    { "en": "as you specified", "ar_eg": "زي ما حددت" },
-      "hallway":   { "en": "a hallway", "ar_eg": "طرقة" }
+      "apartment": {
+        "en": "apartment",
+        "ar_eg": "شقة"
+      },
+      "duplex": {
+        "en": "duplex",
+        "ar_eg": "دوبلكس"
+      },
+      "studio": {
+        "en": "studio",
+        "ar_eg": "ستوديو"
+      },
+      "open": {
+        "en": "open kitchen",
+        "ar_eg": "أمريكاني مفتوح"
+      },
+      "closed": {
+        "en": "closed kitchen",
+        "ar_eg": "مقفول بباب"
+      },
+      "auto": {
+        "en": "arranged automatically",
+        "ar_eg": "هرتبها أوتوماتيك"
+      },
+      "manual": {
+        "en": "as you specified",
+        "ar_eg": "زي ما حددت"
+      },
+      "hallway": {
+        "en": "a hallway",
+        "ar_eg": "طرقة"
+      }
     }
   },
-
   "intents": [
-    { "id": "cant_hear", "description": "The person cannot hear or the audio is unclear.",
-      "examples": ["مش سامعك", "الصوت مش واضح", "I can't hear you"],
-      "text": { "en": "Sorry about that, let me say it again.", "ar_eg": "معلش، هعيد تاني." }, "then": "repeat_question" },
-    { "id": "repeat", "description": "The person asks to repeat the question.",
-      "examples": ["ممكن تعيد؟", "قولي تاني", "what did you say"],
-      "text": { "en": "Sure.", "ar_eg": "حاضر." }, "then": "repeat_question" },
-    { "id": "wait", "description": "The person asks for a moment to think.",
-      "examples": ["ثانية واحدة", "استنى لحظة", "give me a second"],
-      "text": { "en": "Take your time.", "ar_eg": "خد وقتك." }, "then": "wait" },
-    { "id": "end_call", "description": "The person wants to stop the conversation.",
-      "examples": ["مش عايز أكمل", "خلاص كفاية", "I want to stop"],
-      "text": { "en": "No problem, thank you. Goodbye.", "ar_eg": "ولا يهمك، شكراً ليك. مع السلامة." }, "then": "end_call" }
+    {
+      "id": "cant_hear",
+      "description": "The person cannot hear or the audio is unclear.",
+      "examples": [
+        "مش سامعك",
+        "الصوت مش واضح",
+        "I can't hear you"
+      ],
+      "text": {
+        "en": "Sorry about that, let me say it again.",
+        "ar_eg": "معلش، هعيد تاني."
+      },
+      "then": "repeat_question"
+    },
+    {
+      "id": "repeat",
+      "description": "The person asks to repeat the question.",
+      "examples": [
+        "ممكن تعيد؟",
+        "قولي تاني",
+        "what did you say"
+      ],
+      "text": {
+        "en": "Sure.",
+        "ar_eg": "حاضر."
+      },
+      "then": "repeat_question"
+    },
+    {
+      "id": "wait",
+      "description": "The person asks for a moment to think.",
+      "examples": [
+        "ثانية واحدة",
+        "استنى لحظة",
+        "give me a second"
+      ],
+      "text": {
+        "en": "Take your time.",
+        "ar_eg": "خد وقتك."
+      },
+      "then": "wait"
+    },
+    {
+      "id": "end_call",
+      "description": "The person wants to stop the conversation.",
+      "examples": [
+        "مش عايز أكمل",
+        "خلاص كفاية",
+        "I want to stop"
+      ],
+      "text": {
+        "en": "No problem, thank you. Goodbye.",
+        "ar_eg": "ولا يهمك، شكراً ليك. مع السلامة."
+      },
+      "then": "end_call"
+    }
   ],
-
   "policy": {
     "max_questions_per_turn": 2,
-    "ask_order": ["basics", "rooms", "kitchen_living", "extras", "connections"],
-    "optional_slots_to_ask": ["total_area_m2", "master_has_ensuite", "extra_rooms"],
+    "ask_order": [
+      "basics",
+      "rooms",
+      "kitchen_living",
+      "extras",
+      "connections"
+    ],
+    "optional_slots_to_ask": [
+      "total_area_m2",
+      "master_has_ensuite",
+      "extra_rooms"
+    ],
     "on_user_says_you_decide": "use_default_and_mark_assumed",
     "on_unclear_answer": "reprompt_once_then_use_default_if_available",
     "max_reprompts_per_slot": 2,
@@ -75,32 +231,96 @@
       "ar_eg": "ده ملخص اللي طلبته: {summary}. عايز تغير أو تضيف حاجة قبل ما أعمل المخطط؟"
     }
   },
-
   "room_types": {
-    "hallway":  { "resplan_label": null, "name": { "en": "hallway", "ar_eg": "طرقة" } },
-    "bedroom":  { "resplan_label": "bedroom",  "name": { "en": "bedroom",     "ar_eg": "أوضة نوم" } },
-    "bathroom": { "resplan_label": "bathroom", "name": { "en": "bathroom",    "ar_eg": "حمام" } },
-    "kitchen":  { "resplan_label": "kitchen",  "name": { "en": "kitchen",     "ar_eg": "مطبخ" } },
-    "living":   { "resplan_label": "living",   "name": { "en": "living room", "ar_eg": "ريسبشن / أوضة معيشة" } },
-    "balcony":  { "resplan_label": "balcony",  "name": { "en": "balcony",     "ar_eg": "بلكونة" } },
-    "dining":   { "resplan_label": null,       "name": { "en": "dining room", "ar_eg": "أوضة سفرة" } },
-    "storage":  { "resplan_label": null,       "name": { "en": "storage",     "ar_eg": "مخزن" } },
-    "laundry":  { "resplan_label": null,       "name": { "en": "laundry",     "ar_eg": "غسيل" } }
+    "hallway": {
+      "resplan_label": null,
+      "name": {
+        "en": "hallway",
+        "ar_eg": "طرقة"
+      }
+    },
+    "bedroom": {
+      "resplan_label": "bedroom",
+      "name": {
+        "en": "bedroom",
+        "ar_eg": "أوضة نوم"
+      }
+    },
+    "bathroom": {
+      "resplan_label": "bathroom",
+      "name": {
+        "en": "bathroom",
+        "ar_eg": "حمام"
+      }
+    },
+    "kitchen": {
+      "resplan_label": "kitchen",
+      "name": {
+        "en": "kitchen",
+        "ar_eg": "مطبخ"
+      }
+    },
+    "living": {
+      "resplan_label": "living",
+      "name": {
+        "en": "living room",
+        "ar_eg": "ريسبشن / أوضة معيشة"
+      }
+    },
+    "balcony": {
+      "resplan_label": "balcony",
+      "name": {
+        "en": "balcony",
+        "ar_eg": "بلكونة"
+      }
+    },
+    "dining": {
+      "resplan_label": null,
+      "name": {
+        "en": "dining room",
+        "ar_eg": "أوضة سفرة"
+      }
+    },
+    "storage": {
+      "resplan_label": null,
+      "name": {
+        "en": "storage",
+        "ar_eg": "مخزن"
+      }
+    },
+    "laundry": {
+      "resplan_label": null,
+      "name": {
+        "en": "laundry",
+        "ar_eg": "غسيل"
+      }
+    }
   },
-
   "connection_types": {
-    "door":         { "en": "door",         "ar_eg": "باب" },
-    "open_passage": { "en": "open passage", "ar_eg": "مفتوحة على بعض (من غير باب)" },
-    "none":         { "en": "not connected", "ar_eg": "مش متوصلين" }
+    "door": {
+      "en": "door",
+      "ar_eg": "باب"
+    },
+    "open_passage": {
+      "en": "open passage",
+      "ar_eg": "مفتوحة على بعض (من غير باب)"
+    },
+    "none": {
+      "en": "not connected",
+      "ar_eg": "مش متوصلين"
+    }
   },
-
   "slots": [
     {
       "id": "property_type",
       "group": "basics",
       "required": false,
       "type": "enum",
-      "options": ["apartment", "duplex", "studio"],
+      "options": [
+        "apartment",
+        "duplex",
+        "studio"
+      ],
       "default": "apartment",
       "ask_when": [],
       "question": {
@@ -108,8 +328,17 @@
         "ar_eg": "ده شقة عادية، دوبلكس، ولا ستوديو؟"
       },
       "extraction_hints": {
-        "en": ["apartment", "flat", "duplex", "studio"],
-        "ar_eg": ["شقة", "دوبلكس", "ستوديو"]
+        "en": [
+          "apartment",
+          "flat",
+          "duplex",
+          "studio"
+        ],
+        "ar_eg": [
+          "شقة",
+          "دوبلكس",
+          "ستوديو"
+        ]
       }
     },
     {
@@ -131,8 +360,17 @@
         "ar_eg": "رقم تقريبي كفاية، زي ١٢٠ متر."
       },
       "extraction_hints": {
-        "en": ["m2", "sqm", "square meters", "area"],
-        "ar_eg": ["متر", "م٢", "مساحة"]
+        "en": [
+          "m2",
+          "sqm",
+          "square meters",
+          "area"
+        ],
+        "ar_eg": [
+          "متر",
+          "م٢",
+          "مساحة"
+        ]
       }
     },
     {
@@ -153,8 +391,19 @@
         "ar_eg": "قولي رقم أوض النوم، مثلاً ٢ أو ٣."
       },
       "extraction_hints": {
-        "en": ["bedroom", "bedrooms", "BR", "master"],
-        "ar_eg": ["أوضة نوم", "اوضتين", "غرفة نوم", "غرف نوم", "اوض نوم"]
+        "en": [
+          "bedroom",
+          "bedrooms",
+          "BR",
+          "master"
+        ],
+        "ar_eg": [
+          "أوضة نوم",
+          "اوضتين",
+          "غرفة نوم",
+          "غرف نوم",
+          "اوض نوم"
+        ]
       }
     },
     {
@@ -175,8 +424,18 @@
         "ar_eg": "كام حمام؟ مثلاً ١ أو ٢."
       },
       "extraction_hints": {
-        "en": ["bathroom", "bath", "toilet", "WC"],
-        "ar_eg": ["حمام", "حمامين", "دورة مياه", "تواليت"]
+        "en": [
+          "bathroom",
+          "bath",
+          "toilet",
+          "WC"
+        ],
+        "ar_eg": [
+          "حمام",
+          "حمامين",
+          "دورة مياه",
+          "تواليت"
+        ]
       }
     },
     {
@@ -186,8 +445,16 @@
       "type": "boolean",
       "default": false,
       "ask_when": [
-        { "slot": "num_bedrooms", "op": "gte", "value": 2 },
-        { "slot": "num_bathrooms", "op": "gte", "value": 2 }
+        {
+          "slot": "num_bedrooms",
+          "op": "gte",
+          "value": 2
+        },
+        {
+          "slot": "num_bathrooms",
+          "op": "gte",
+          "value": 2
+        }
       ],
       "question": {
         "en": "Should the master bedroom have its own bathroom inside it?",
@@ -199,7 +466,10 @@
       "group": "kitchen_living",
       "required": true,
       "type": "enum",
-      "options": ["open", "closed"],
+      "options": [
+        "open",
+        "closed"
+      ],
       "default": "closed",
       "ask_when": [],
       "question": {
@@ -207,8 +477,16 @@
         "ar_eg": "عايز المطبخ أمريكاني مفتوح على الريسبشن ولا مقفول بباب؟"
       },
       "extraction_hints": {
-        "en": ["open kitchen", "closed kitchen", "american kitchen"],
-        "ar_eg": ["مطبخ أمريكاني", "مطبخ مفتوح", "مطبخ مقفول"]
+        "en": [
+          "open kitchen",
+          "closed kitchen",
+          "american kitchen"
+        ],
+        "ar_eg": [
+          "مطبخ أمريكاني",
+          "مطبخ مفتوح",
+          "مطبخ مقفول"
+        ]
       }
     },
     {
@@ -218,7 +496,11 @@
       "type": "boolean",
       "default": true,
       "ask_when": [
-        { "slot": "property_type", "op": "ne", "value": "studio" }
+        {
+          "slot": "property_type",
+          "op": "ne",
+          "value": "studio"
+        }
       ],
       "question": {
         "en": "Do you want a separate living room (reception)?",
@@ -230,7 +512,12 @@
       "group": "extras",
       "required": false,
       "type": "multi_enum",
-      "options": ["balcony", "dining", "storage", "laundry"],
+      "options": [
+        "balcony",
+        "dining",
+        "storage",
+        "laundry"
+      ],
       "default": [],
       "ask_when": [],
       "question": {
@@ -238,8 +525,20 @@
         "ar_eg": "عايز مساحات زيادة: بلكونة، أوضة سفرة، مخزن، ولا غسيل؟"
       },
       "extraction_hints": {
-        "en": ["balcony", "terrace", "dining", "storage", "laundry"],
-        "ar_eg": ["بلكونة", "تراس", "سفرة", "مخزن", "غسيل"]
+        "en": [
+          "balcony",
+          "terrace",
+          "dining",
+          "storage",
+          "laundry"
+        ],
+        "ar_eg": [
+          "بلكونة",
+          "تراس",
+          "سفرة",
+          "مخزن",
+          "غسيل"
+        ]
       }
     },
     {
@@ -251,7 +550,11 @@
       "max": 4,
       "default": 1,
       "ask_when": [
-        { "slot": "extra_rooms", "op": "contains", "value": "balcony" }
+        {
+          "slot": "extra_rooms",
+          "op": "contains",
+          "value": "balcony"
+        }
       ],
       "question": {
         "en": "How many balconies, and which room should each one open from?",
@@ -266,7 +569,11 @@
       "options_from": "rooms_list",
       "default": "living",
       "ask_when": [
-        { "slot": "rooms_known", "op": "eq", "value": true }
+        {
+          "slot": "rooms_known",
+          "op": "eq",
+          "value": true
+        }
       ],
       "question": {
         "en": "When you enter through the front door, which room should you arrive in?",
@@ -278,10 +585,17 @@
       "group": "connections",
       "required": true,
       "type": "enum",
-      "options": ["auto", "manual"],
+      "options": [
+        "auto",
+        "manual"
+      ],
       "default": "auto",
       "ask_when": [
-        { "slot": "rooms_known", "op": "eq", "value": true }
+        {
+          "slot": "rooms_known",
+          "op": "eq",
+          "value": true
+        }
       ],
       "question": {
         "en": "Do you want me to arrange which rooms connect to each other automatically, or do you want to specify it yourself?",
@@ -296,11 +610,19 @@
       "edge_schema": {
         "from": "room_id",
         "to": "room_id",
-        "via": ["door", "open_passage", "none"]
+        "via": [
+          "door",
+          "open_passage",
+          "none"
+        ]
       },
       "default": "apply_default_connection_rules",
       "ask_when": [
-        { "slot": "connections_mode", "op": "eq", "value": "manual" }
+        {
+          "slot": "connections_mode",
+          "op": "eq",
+          "value": "manual"
+        }
       ],
       "question": {
         "en": "Your rooms are: {rooms_list}. Tell me which rooms connect to each other, and whether each link is a door or an open passage.",
@@ -309,16 +631,31 @@
       "followups": [
         {
           "id": "bedroom_access",
-          "ask_when": [{ "slot": "num_bedrooms", "op": "gte", "value": 2 }],
+          "ask_when": [
+            {
+              "slot": "num_bedrooms",
+              "op": "gte",
+              "value": 2
+            }
+          ],
           "question": {
             "en": "Should the bedrooms open onto a hallway, or directly into the living room?",
             "ar_eg": "أوض النوم تفتح على طرقة، ولا على الريسبشن مباشرة؟"
           },
-          "options": ["hallway", "living"]
+          "options": [
+            "hallway",
+            "living"
+          ]
         },
         {
           "id": "bathroom_access",
-          "ask_when": [{ "slot": "num_bathrooms", "op": "gte", "value": 1 }],
+          "ask_when": [
+            {
+              "slot": "num_bathrooms",
+              "op": "gte",
+              "value": 1
+            }
+          ],
           "question": {
             "en": "Which room should the main bathroom be reached from?",
             "ar_eg": "الحمام الرئيسي يتدخله من أنهي مكان؟"
@@ -340,7 +677,10 @@
       "max": 15,
       "default": null,
       "ask_when": [
-        { "slot": "num_bedrooms", "op": "missing" }
+        {
+          "slot": "num_bedrooms",
+          "op": "missing"
+        }
       ],
       "question": {
         "en": "How many people will live in the apartment? I can suggest the number of bedrooms from that.",
@@ -361,23 +701,97 @@
       }
     }
   ],
-
   "default_connection_rules": [
-    { "from": "front_door", "to": "entrance_room", "via": "door" },
-    { "from": "living", "to": "kitchen", "via_by_kitchen_type": { "open": "open_passage", "closed": "door" } },
-    { "from": "living", "to": "dining", "via": "open_passage", "only_if_room_exists": true },
-    { "from": "living", "to": "hallway", "via": "open_passage", "only_if_room_exists": true },
-    { "from": "bedroom", "to": "hallway_or_living", "via": "door", "applies_to": "each_bedroom" },
-    { "from": "bathroom", "to": "hallway_or_living", "via": "door", "applies_to": "each_bathroom" },
-    { "from": "master_bedroom", "to": "ensuite_bathroom", "via": "door", "only_if": "master_has_ensuite" },
-    { "from": "balcony", "to": "living_or_bedroom", "via": "door", "applies_to": "each_balcony" }
+    {
+      "from": "front_door",
+      "to": "entrance_room",
+      "via": "door"
+    },
+    {
+      "from": "living",
+      "to": "kitchen",
+      "via_by_kitchen_type": {
+        "open": "open_passage",
+        "closed": "door"
+      }
+    },
+    {
+      "from": "living",
+      "to": "dining",
+      "via": "open_passage",
+      "only_if_room_exists": true
+    },
+    {
+      "from": "living",
+      "to": "hallway",
+      "via": "open_passage",
+      "only_if_room_exists": true
+    },
+    {
+      "from": "bedroom",
+      "to": "hallway_or_living",
+      "via": "door",
+      "applies_to": "each_bedroom"
+    },
+    {
+      "from": "bathroom",
+      "to": "hallway_or_living",
+      "via": "door",
+      "applies_to": "each_bathroom"
+    },
+    {
+      "from": "master_bedroom",
+      "to": "ensuite_bathroom",
+      "via": "door",
+      "only_if": "master_has_ensuite"
+    },
+    {
+      "from": "balcony",
+      "to": "living_or_bedroom",
+      "via": "door",
+      "applies_to": "each_balcony"
+    }
   ],
-
   "validation_rules": [
-    { "id": "need_a_bathroom", "check": "num_bathrooms >= 1", "message": { "en": "An apartment needs at least one bathroom.", "ar_eg": "لازم في الشقة حمام واحد على الأقل." } },
-    { "id": "bathrooms_not_exceed_rooms", "check": "num_bathrooms <= num_bedrooms + 2", "message": { "en": "That is a lot of bathrooms for this number of bedrooms. Are you sure?", "ar_eg": "عدد الحمامات كبير بالنسبة لأوض النوم. متأكد؟" } },
-    { "id": "area_per_bedroom", "check": "total_area_m2 is null or total_area_m2 / (num_bedrooms + 2) >= 14", "message": { "en": "That area may be too small for this many rooms. Do you want to lower the number of rooms or increase the area?", "ar_eg": "المساحة دي ممكن تبقى صغيرة على الأوض دي كلها. عايز تقلل الأوض ولا تزود المساحة؟" } },
-    { "id": "no_isolated_room", "check": "every room has at least one connection", "message": { "en": "{room} is not connected to anything. Which room should it open to?", "ar_eg": "{room} مش متوصلة بأي مكان. تفتح على أنهي أوضة؟" } },
-    { "id": "all_rooms_reachable", "check": "graph is connected from front_door", "message": { "en": "Some rooms cannot be reached from the entrance. Let us fix the connections.", "ar_eg": "في أوض مفيش طريق ليها من باب الشقة. تعالى نظبط الوصلات." } }
+    {
+      "id": "need_a_bathroom",
+      "check": "num_bathrooms >= 1",
+      "message": {
+        "en": "An apartment needs at least one bathroom.",
+        "ar_eg": "لازم في الشقة حمام واحد على الأقل."
+      }
+    },
+    {
+      "id": "bathrooms_not_exceed_rooms",
+      "check": "num_bathrooms <= num_bedrooms + 2",
+      "message": {
+        "en": "That is a lot of bathrooms for this number of bedrooms. Are you sure?",
+        "ar_eg": "عدد الحمامات كبير بالنسبة لأوض النوم. متأكد؟"
+      }
+    },
+    {
+      "id": "area_per_bedroom",
+      "check": "total_area_m2 is null or total_area_m2 / (num_bedrooms + 2) >= 14",
+      "message": {
+        "en": "That area may be too small for this many rooms. Do you want to lower the number of rooms or increase the area?",
+        "ar_eg": "المساحة دي ممكن تبقى صغيرة على الأوض دي كلها. عايز تقلل الأوض ولا تزود المساحة؟"
+      }
+    },
+    {
+      "id": "no_isolated_room",
+      "check": "every room has at least one connection",
+      "message": {
+        "en": "{room} is not connected to anything. Which room should it open to?",
+        "ar_eg": "{room} مش متوصلة بأي مكان. تفتح على أنهي أوضة؟"
+      }
+    },
+    {
+      "id": "all_rooms_reachable",
+      "check": "graph is connected from front_door",
+      "message": {
+        "en": "Some rooms cannot be reached from the entrance. Let us fix the connections.",
+        "ar_eg": "في أوض مفيش طريق ليها من باب الشقة. تعالى نظبط الوصلات."
+      }
+    }
   ]
 }
