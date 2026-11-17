@@ -178,10 +178,10 @@ function renderDone(data) {
   }
 }
 
-function applyReply(data) {
-  addBubble("assistant", data.message.text);
-  renderQuick(data.quick_replies);
-  renderDone(data);
+function applyReply(reply) {
+  addBubble("assistant", reply.text);
+  renderQuick(reply.quick_replies);
+  renderDone(reply);
 }
 
 async function startSession() {
@@ -199,7 +199,7 @@ async function startSession() {
     sessionId = data.session_id;
     localStorage.setItem("session_id", sessionId);
     setTyping(false);
-    applyReply(data);
+    applyReply(data.reply);
   } catch (e) {
     setTyping(false);
     addBubble("assistant", e.message, "error");
@@ -212,8 +212,9 @@ async function restoreSession() {
     const data = await api("/sessions/" + sessionId);
     $("lang").value = data.language;
     for (const m of data.messages) addBubble(m.role, m.text);
-    renderQuick(data.quick_replies);
-    renderDone(data);
+    renderDone({ done: data.finished, room_graph: data.room_graph });
+    const last = data.messages[data.messages.length - 1];
+    if (last && last.role === "assistant") renderQuick(last.quick_replies);
   } catch (e) {
     await startSession();
   }

@@ -10,7 +10,7 @@ from backend.agent.extraction import (
 )
 
 
-QUESTIONS_PATH = "Backend/agent/requirements_questions.json"
+QUESTIONS_PATH = "backend/agent/questions.json"
 
 manager = ConversationManager(QUESTIONS_PATH)
 
