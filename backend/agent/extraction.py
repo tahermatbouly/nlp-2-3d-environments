@@ -1,3 +1,4 @@
+import json
 import re
 from typing import Literal
 
@@ -81,9 +82,23 @@ def _annotation(slot: dict):
     return str | None
 
 
-def _describe_slots(slots: list[dict]) -> str:
+def _describe_slots(slots: list[dict], current_values: dict | None = None) -> str:
+    """Field list for the prompt. Answered fields show their value so the
+    model can tell a change from a first answer."""
 
-    return "\n".join(f"- {s['id']}: {s['description']}" for s in slots)
+    lines = []
+
+    for s in slots:
+
+        line = f"- {s['id']}: {s['description']}"
+
+        if current_values and s["id"] in current_values:
+            shown = json.dumps(current_values[s["id"]], ensure_ascii=False)
+            line += f" [ALREADY ANSWERED, currently: {shown}]"
+
+        lines.append(line)
+
+    return "\n".join(lines)
 
 
 # ============================================================
@@ -227,6 +242,16 @@ RULES:
   derive one from the other.
 - For room connections use only the ids under KNOWN ROOMS. "open"
   or "من غير باب" = open_passage.
+- Fields marked ALREADY ANSWERED hold what the user said earlier.
+  Only set one of them when the user clearly changes their mind
+  ("actually add a living room", "make it 2 bathrooms", "no balcony
+  after all"). Never set one just because the same word shows up in
+  an answer to a different question. A changed answer replaces the
+  old one.
+- For list fields (like extra_rooms), return the COMPLETE new list:
+  the current items plus or minus what the user changed.
+- A change may come in the same message as the answer to the
+  current question: fill both.
 - The speech comes from an imperfect speech-to-text system; extract
   what is clearly there and ignore obvious noise.
 - A real (even partial) answer always takes priority over an
@@ -246,6 +271,7 @@ async def process_turn(
     transcript: str,
     rooms_context: str = "",
     room_ids: list[str] | None = None,
+    current_values: dict | None = None,
 ) -> dict:
     """
     One LLM call, three possible outcomes:
@@ -263,7 +289,7 @@ async def process_turn(
     prompt = TURN_PROMPT.format(
         question=question_text,
         current_fields=_describe_slots(current_slots) or "(none, open description)",
-        fields=_describe_slots(slots),
+        fields=_describe_slots(slots, current_values),
         rooms=rooms_context or "(not final yet)",
         intents=_describe_intents(intents) or "(none)",
         transcript=transcript,

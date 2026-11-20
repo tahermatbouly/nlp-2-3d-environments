@@ -21,6 +21,8 @@ ROOM_GROUPS = {"rooms", "kitchen_living", "extras"}
 # Threshold behind the "area_per_bedroom" validation rule.
 MIN_AREA_PER_ROOM_M2 = 14
 
+UPDATED_FALLBACK = {"en": "Done, I updated:", "ar_eg": "تمام، عدّلت:"}
+
 _COMPARE = {
     "gte": operator.ge,
     "gt": operator.gt,
@@ -235,12 +237,23 @@ class ConversationManager:
 
         return bool(slot.get("required")) or slot["id"] in self._optional_to_ask
 
-    def conditions_met(self, slot: dict, req: dict, resolved: list[str]) -> bool:
+    def conditions_met(
+        self,
+        slot: dict,
+        req: dict,
+        resolved: list[str],
+        values_only: bool = False,
+    ) -> bool:
+        """values_only skips the conditions about progress (rooms_known,
+        resolved) and checks only the user's actual answers."""
 
         for cond in slot.get("ask_when", []):
 
             sid, op = cond["slot"], cond["op"]
             target = cond.get("value")
+
+            if values_only and (sid == "rooms_known" or op == "resolved"):
+                continue
 
             value = (
                 self.rooms_known(req, resolved)
@@ -311,14 +324,12 @@ class ConversationManager:
     def extractable_slots(
         self, req: dict, resolved: list[str], current_ids: list[str]
     ) -> list[dict]:
-        """Everything the LLM may fill this turn: the slots being asked
-        plus any still-unresolved slot the user volunteers early."""
+        """Everything the LLM may fill this turn. That is every slot:
+        the ones being asked, ones volunteered early, and ones already
+        answered that the user now wants to change (the prompt shows
+        their current values and says when a change is allowed)."""
 
-        return [
-            s
-            for s in self.slots
-            if s["id"] in current_ids or s["id"] not in resolved
-        ]
+        return list(self.slots)
 
     def fill_defaults(self, req: dict, resolved: list[str], assumed: list[str]) -> None:
         """Settle applicable slots we never ask about, using defaults."""
@@ -488,8 +499,6 @@ class ConversationManager:
         un-settle those slots so they are asked again.
         """
 
-        ids = {r["id"] for r in self.rooms(req)}
-
         def unresolve(sid: str) -> None:
 
             req.pop(sid, None)
@@ -499,6 +508,29 @@ class ConversationManager:
 
             if sid in assumed:
                 assumed.remove(sid)
+
+        # Answers that no longer apply after a change: the ensuite
+        # question after going down to one bedroom, the balcony count
+        # after removing the balcony. Only slots we ask about or filled
+        # by default are pruned, so details the user volunteered stay.
+        for _ in range(3):
+
+            stale = [
+                slot["id"]
+                for slot in self.slots
+                if slot["id"] in resolved
+                and slot["type"] != "edge_list"
+                and (self._is_askable(slot) or slot["id"] in assumed)
+                and not self.conditions_met(slot, req, resolved, values_only=True)
+            ]
+
+            if not stale:
+                break
+
+            for sid in stale:
+                unresolve(sid)
+
+        ids = {r["id"] for r in self.rooms(req)}
 
         edges = req.get("room_connections")
 
@@ -837,6 +869,31 @@ class ConversationManager:
     def get_intent(self, intent_id: str) -> dict | None:
 
         return self._intents_by_id.get(intent_id)
+
+    def change_segments(self, slot_ids: list[str], req: dict, lang: str) -> list[dict]:
+        """A short line confirming what the user just changed."""
+
+        labels = self.messages.get("summary_labels", {})
+        parts = []
+
+        for sid in slot_ids:
+
+            slot = self._slots_by_id.get(sid)
+            value = req.get(sid)
+
+            if slot is None or value is None or sid not in labels:
+                continue
+
+            parts.append(
+                f"{self.slot_label(sid, lang)}: {self.format_value(slot, value, req, lang)}"
+            )
+
+        if not parts:
+            return []
+
+        lead = self.text(self.messages.get("updated") or UPDATED_FALLBACK, lang)
+
+        return [{"kind": "live", "text": f"{lead} " + ". ".join(parts) + "."}]
 
     def confirmation_segments(self, summary: str, lang: str) -> list[dict]:
 

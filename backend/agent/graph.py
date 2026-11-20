@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from langgraph.graph import StateGraph, START, END
 
 from backend.agent.state import AgentState
@@ -10,7 +12,7 @@ from backend.agent.extraction import (
 )
 
 
-QUESTIONS_PATH = "backend/agent/questions.json"
+QUESTIONS_PATH = Path(__file__).with_name("questions.json")
 
 manager = ConversationManager(QUESTIONS_PATH)
 
@@ -374,6 +376,11 @@ async def process_answer(state: AgentState) -> AgentState:
         transcript=transcript,
         rooms_context=manager.rooms_context(requirements, resolved, lang),
         room_ids=manager.room_ids(requirements, resolved),
+        current_values={
+            sid: requirements[sid]
+            for sid in resolved
+            if requirements.get(sid) is not None
+        },
     )
 
     print("[GRAPH] Turn result:", result)
@@ -382,13 +389,33 @@ async def process_answer(state: AgentState) -> AgentState:
         return await _handle_intent(state, result["intent_id"])
 
     if result["kind"] != "answer":
+
+        # Open first turn ("hi", small talk): nothing to extract, and the
+        # greeting already invited them to describe the place. Start the
+        # questions instead of repeating the greeting.
+        if not current_ids and not correcting:
+            return _next_step(state, requirements, resolved, assumed)
+
         return _retry(state, "wrong_answer")
+
+    before = dict(requirements)
+    was_resolved = set(resolved)
 
     touched = _apply_result(requirements, resolved, assumed, result)
 
+    # Answers the user changed (not first answers), in slot order.
+    changed = [
+        s["id"]
+        for s in manager.slots
+        if s["id"] in touched
+        and s["id"] in was_resolved
+        and requirements.get(s["id"]) != before.get(s["id"])
+    ]
+
     # Volunteered extras are kept, but the question that was asked
-    # must be answered before we move on.
-    if current_ids and not touched & set(current_ids):
+    # must be answered before we move on. A change counts as progress:
+    # the question that is still open is simply asked again.
+    if current_ids and not touched & set(current_ids) and not changed:
 
         print("[GRAPH] Current question not answered:", current_ids, "| got:", sorted(touched))
 
@@ -397,10 +424,13 @@ async def process_answer(state: AgentState) -> AgentState:
             "wrong_answer",
         )
 
-    if correcting:
+    if correcting or changed:
         state = {**state, "acknowledged_rules": []}
 
-    return _next_step(state, requirements, resolved, assumed)
+    # Say what changed, then carry on with whatever is still missing.
+    echo = [] if correcting else manager.change_segments(changed, requirements, lang)
+
+    return _next_step(state, requirements, resolved, assumed, intent_prompt=echo)
 
 
 # ============================================================
