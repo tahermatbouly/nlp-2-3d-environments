@@ -23,6 +23,11 @@ MIN_AREA_PER_ROOM_M2 = 14
 
 UPDATED_FALLBACK = {"en": "Done, I updated:", "ar_eg": "تمام، عدّلت:"}
 
+RANGE_WORDS = {
+    "up_to": {"en": "up to", "ar_eg": "لحد"},
+    "from": {"en": "from", "ar_eg": "من"},
+}
+
 _COMPARE = {
     "gte": operator.ge,
     "gt": operator.gt,
@@ -330,6 +335,69 @@ class ConversationManager:
         their current values and says when a change is allowed)."""
 
         return list(self.slots)
+
+    def related_slots(self, slot_ids: list[str]) -> list[dict]:
+        """The slots plus the ones that are other ways to answer them
+        (the area can be a number, a limit or a size)."""
+
+        ids = set(slot_ids)
+
+        for sid in slot_ids:
+            slot = self._slots_by_id.get(sid) or {}
+            ids.update(slot.get("also_settled_by", []))
+            ids.update(slot.get("replaces", []))
+
+        return [s for s in self.slots if s["id"] in ids]
+
+    def area_bounds(self, req: dict) -> tuple[float | None, float | None]:
+        """
+        (min, max) in m2 from whatever the user said about size:
+        an exact number gives (n, n); otherwise explicit limits, with
+        a size word ("small") filling in the sides they leave open.
+        """
+
+        total = req.get("total_area_m2")
+
+        if total:
+            return total, total
+
+        low, high = req.get("area_min_m2"), req.get("area_max_m2")
+
+        ranges = (self._slots_by_id.get("size_class") or {}).get("ranges", {})
+        size_range = ranges.get(req.get("size_class"), {})
+
+        low = low if low is not None else size_range.get("min")
+        high = high if high is not None else size_range.get("max")
+
+        if low is not None and high is not None and low > high:
+            low, high = high, low
+
+        return low, high
+
+    def _area_range(self, req: dict) -> dict | None:
+
+        if req.get("total_area_m2"):
+            return None
+
+        low, high = self.area_bounds(req)
+
+        if low is None and high is None:
+            return None
+
+        return {"min": low, "max": high}
+
+    def _range_text(self, rng: dict, lang: str) -> str:
+
+        unit = self.text(self.messages.get("units", {}).get("m2"), lang)
+        low, high = rng.get("min"), rng.get("max")
+
+        if low is not None and high is not None:
+            return f"{low:g}-{high:g} {unit}"
+
+        if high is not None:
+            return f"{self.text(RANGE_WORDS['up_to'], lang)} {high:g} {unit}"
+
+        return f"{self.text(RANGE_WORDS['from'], lang)} {low:g} {unit}"
 
     def fill_defaults(self, req: dict, resolved: list[str], assumed: list[str]) -> None:
         """Settle applicable slots we never ask about, using defaults."""
@@ -749,7 +817,10 @@ class ConversationManager:
 
     def _check_area_per_bedroom(self, req: dict) -> dict | None:
 
-        area = req.get("total_area_m2")
+        low, high = self.area_bounds(req)
+
+        # The upper limit is the room we have to work with.
+        area = high if high is not None else low
 
         if area and area / ((req.get("num_bedrooms") or 0) + 2) < MIN_AREA_PER_ROOM_M2:
             return {"kind": "warning", "room": None}
@@ -927,7 +998,10 @@ class ConversationManager:
             if slot.get("options_from") == "rooms_list":
                 return self.room_label(req, value, lang)
 
-            return self.option_name(value, lang)
+            name = self.option_name(value, lang)
+            size_range = (slot.get("ranges") or {}).get(value)
+
+            return f"{name} ({self._range_text(size_range, lang)})" if size_range else name
 
         if kind == "multi_enum":
 
@@ -988,6 +1062,8 @@ class ConversationManager:
             "schema_version": "1.0",
             "property_type": req.get("property_type", "apartment"),
             "total_area_m2": req.get("total_area_m2"),
+            "area_range_m2": self._area_range(req),
+            "size_class": req.get("size_class"),
             "family_size": req.get("family_size"),
             "budget_egp": req.get("budget_egp"),
             "entrance_room": self.entrance_room(req),

@@ -19,7 +19,7 @@ from backend.agent.conversation_manager import normalize_digits
 llm = ChatGroq(
     api_key=config.GROQ_API_KEY,
     model="openai/gpt-oss-20b",
-    temperature=0,
+    temperature=0.2,
 )
 
 
@@ -232,6 +232,13 @@ RULES:
   room. "حمامين" = 2 bathrooms. "أوضتين" = 2 bedrooms.
 - "شقة ٣ أوض" or "3 rooms" with no other qualifier means 3 bedrooms
   (the living room is counted separately).
+- Apartment size can be given in several ways. A number ("120 m2",
+  "حوالي ١٢٠ متر") goes in total_area_m2. A limit goes in area_max_m2
+  ("less than 100", "under 100", "أقل من ١٠٠", "مش أكتر من ١٠٠") or
+  area_min_m2 ("more than 150", "أكتر من ١٥٠"). A range ("between 100
+  and 130") fills both. A word without numbers ("small", "صغيرة",
+  "medium", "متوسطة", "big", "كبيرة") goes in size_class. Use
+  size_class only when no number was given.
 - Numbers may be spoken as words: واحد، اتنين، تلاتة، أربعة، خمسة،
   ستة. Convert them to digits.
 - Only use "use_default_for" when the user explicitly leaves the

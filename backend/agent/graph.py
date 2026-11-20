@@ -86,6 +86,18 @@ def _merge_edges(existing: list[dict], new: list[dict]) -> list[dict]:
     return list(merged.values())
 
 
+def _changed_slots(before: dict, was_resolved: set, touched: set, requirements: dict) -> list[str]:
+    """Answers the user changed (not first answers), in slot order."""
+
+    return [
+        s["id"]
+        for s in manager.slots
+        if s["id"] in touched
+        and s["id"] in was_resolved
+        and requirements.get(s["id"]) != before.get(s["id"])
+    ]
+
+
 def _apply_result(requirements: dict, resolved: list, assumed: list, result: dict) -> set[str]:
     """Write an extraction result into the requirements. Returns the
     slot ids that were actually settled by it."""
@@ -121,6 +133,25 @@ def _apply_result(requirements: dict, resolved: list, assumed: list, result: dic
                 resolved.append(sid)
 
             touched.add(sid)
+
+    # The latest statement wins: a new exact area replaces an earlier
+    # limit or size word, and the other way round.
+    for sid in result.get("updates", {}):
+
+        for other in (manager.get_slot(sid) or {}).get("replaces", []):
+
+            if other not in result["updates"]:
+                requirements.pop(other, None)
+
+    # An answer in a related slot also settles the slot that was asked
+    # ("under 100" answers the area question).
+    for slot in manager.slots:
+
+        helpers = slot.get("also_settled_by")
+
+        if helpers and slot["id"] not in resolved and any(h in touched for h in helpers):
+            resolved.append(slot["id"])
+            touched.add(slot["id"])
 
     manager.reconcile(requirements, resolved, assumed)
 
@@ -363,7 +394,7 @@ async def process_answer(state: AgentState) -> AgentState:
     current_slots = [manager.get_slot(i) for i in current_ids]
 
     slots = (
-        current_slots
+        manager.related_slots(current_ids)
         if correcting
         else manager.extractable_slots(requirements, resolved, current_ids)
     )
@@ -403,14 +434,7 @@ async def process_answer(state: AgentState) -> AgentState:
 
     touched = _apply_result(requirements, resolved, assumed, result)
 
-    # Answers the user changed (not first answers), in slot order.
-    changed = [
-        s["id"]
-        for s in manager.slots
-        if s["id"] in touched
-        and s["id"] in was_resolved
-        and requirements.get(s["id"]) != before.get(s["id"])
-    ]
+    changed = _changed_slots(before, was_resolved, touched, requirements)
 
     # Volunteered extras are kept, but the question that was asked
     # must be answered before we move on. A change counts as progress:
@@ -491,7 +515,7 @@ async def _handle_intent(state: AgentState, intent_id: str) -> AgentState:
 # Corrections (shared by the summary and soft warnings)
 # ============================================================
 
-def _apply_correction(
+async def _apply_correction(
     state: AgentState,
     requirements: dict,
     resolved: list,
@@ -515,7 +539,31 @@ def _apply_correction(
 
     new_value = decision.get("new_value")
 
-    if new_value:
+    # A slot with several ways to answer (the area can be a number, a
+    # limit like "under 100", or a size word) is re-read from what the
+    # user actually said, because "under 100" is not the number 100.
+    if slot.get("also_settled_by") and state.get("transcript"):
+
+        result = await process_turn(
+            question_text=_plain_text(state["current_prompt"]),
+            slots=manager.related_slots([field]),
+            current_slots=[slot],
+            intents=[],
+            transcript=state["transcript"],
+            current_values={
+                sid: requirements[sid]
+                for sid in resolved
+                if requirements.get(sid) is not None
+            },
+        )
+
+        if result["kind"] == "answer" and (result["updates"] or result["use_default_for"]):
+
+            _apply_result(requirements, resolved, assumed, result)
+
+            return _next_step(state, requirements, resolved, assumed)
+
+    if new_value and not slot.get("also_settled_by"):
 
         parsed = parse_inline_correction_value(
             manager, slot, new_value, manager.room_ids(requirements, resolved)
@@ -587,12 +635,17 @@ async def process_validation_reply(state: AgentState) -> AgentState:
 
         result = await process_turn(
             question_text=_plain_text(state["current_prompt"]),
-            slots=[repair],
+            slots=[repair] + manager.slots,
             current_slots=[repair],
             intents=manager.intents,
             transcript=transcript,
             rooms_context=manager.rooms_context(requirements, resolved, lang),
             room_ids=manager.room_ids(requirements, resolved),
+            current_values={
+                sid: requirements[sid]
+                for sid in resolved
+                if requirements.get(sid) is not None
+            },
         )
 
         print("[GRAPH] Repair result:", result)
@@ -600,16 +653,48 @@ async def process_validation_reply(state: AgentState) -> AgentState:
         if result["kind"] == "intent":
             return await _handle_intent(state, result["intent_id"])
 
-        target = result.get("updates", {}).get("repair_target") if result["kind"] == "answer" else None
+        updates = dict(result.get("updates", {})) if result["kind"] == "answer" else {}
+        target = updates.pop("repair_target", None)
+        defaults = [s for s in result.get("use_default_for", []) if s != "repair_target"]
 
-        if not target or target == pending["room"]:
+        # The user may change an earlier answer instead of (or as well as)
+        # saying where the room opens.
+        changed: list[str] = []
+
+        if updates or defaults:
+
+            before, was_resolved = dict(requirements), set(resolved)
+
+            touched = _apply_result(
+                requirements,
+                resolved,
+                assumed,
+                {"updates": updates, "use_default_for": defaults},
+            )
+
+            changed = _changed_slots(before, was_resolved, touched, requirements)
+
+        known = {r["id"] for r in manager.rooms(requirements)}
+
+        if target and target != pending["room"] and {target, pending["room"]} <= known:
+
+            requirements["room_connections"] = list(
+                requirements.get("room_connections") or []
+            ) + [{"from": pending["room"], "to": target, "via": "door"}]
+
+        elif not changed:
             return _retry(state, "wrong_answer")
 
-        requirements["room_connections"] = list(requirements.get("room_connections") or []) + [
-            {"from": pending["room"], "to": target, "via": "door"}
-        ]
+        if changed:
+            state = {**state, "acknowledged_rules": []}
 
-        return _next_step(state, requirements, resolved, assumed)
+        return _next_step(
+            state,
+            requirements,
+            resolved,
+            assumed,
+            intent_prompt=manager.change_segments(changed, requirements, lang),
+        )
 
     # --------------------------------------------------------
     # Soft warning: keep as is, or change something?
@@ -633,7 +718,7 @@ async def process_validation_reply(state: AgentState) -> AgentState:
         )
 
     if decision["action"] == "correct":
-        return _apply_correction(state, requirements, resolved, assumed, decision)
+        return await _apply_correction(state, requirements, resolved, assumed, decision)
 
     return _retry(state, "wrong_answer")
 
@@ -691,7 +776,7 @@ async def process_summary_reply(state: AgentState) -> AgentState:
         }
 
     if decision["action"] == "correct":
-        return _apply_correction(state, requirements, resolved, assumed, decision)
+        return await _apply_correction(state, requirements, resolved, assumed, decision)
 
     print("[GRAPH] Summary reply unclear, replaying summary")
 
